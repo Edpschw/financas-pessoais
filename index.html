@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finanças Pessoais</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💰</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">💰 <span>Finanças Pessoais</span></div>
+    <nav class="tabs" id="tabs">
+      <button class="tab-btn active" data-view="dashboard">Dashboard</button>
+      <button class="tab-btn" data-view="transacoes">Transações</button>
+      <button class="tab-btn" data-view="investimentos">Investimentos</button>
+      <button class="tab-btn" data-view="metas">Metas</button>
+      <button class="tab-btn" data-view="orcamento">Orçamento</button>
+      <button class="tab-btn" data-view="oportunidades">Oportunidades</button>
+      <button class="tab-btn" data-view="configuracoes">Configurações</button>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <!-- DASHBOARD -->
+    <section id="view-dashboard" class="view active">
+      <div class="month-switcher">
+        <button id="dash-prev-month" class="icon-btn">‹</button>
+        <h2 id="dash-month-label">—</h2>
+        <button id="dash-next-month" class="icon-btn">›</button>
+      </div>
+
+      <div class="cards-grid">
+        <div class="card stat">
+          <span class="stat-label">Receita do mês</span>
+          <span class="stat-value positive" id="stat-income">R$ 0,00</span>
+        </div>
+        <div class="card stat">
+          <span class="stat-label">Despesas do mês</span>
+          <span class="stat-value negative" id="stat-expense">R$ 0,00</span>
+        </div>
+        <div class="card stat">
+          <span class="stat-label">Saldo do mês</span>
+          <span class="stat-value" id="stat-balance">R$ 0,00</span>
+        </div>
+        <div class="card stat">
+          <span class="stat-label">Patrimônio investido</span>
+          <span class="stat-value" id="stat-networth">R$ 0,00</span>
+        </div>
+      </div>
+
+      <div class="cards-grid two-col">
+        <div class="card">
+          <h3>Receitas x Despesas (últimos 6 meses)</h3>
+          <canvas id="chart-cashflow"></canvas>
+        </div>
+        <div class="card">
+          <h3>Alocação de investimentos</h3>
+          <canvas id="chart-allocation"></canvas>
+        </div>
+      </div>
+
+      <div class="cards-grid two-col">
+        <div class="card">
+          <h3>Despesas por categoria (mês atual)</h3>
+          <canvas id="chart-categories"></canvas>
+        </div>
+        <div class="card" id="dash-opportunities-card">
+          <h3>Alertas e oportunidades</h3>
+          <div id="dash-opportunities-list" class="opportunities-list"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Patrimônio investido ao longo do tempo</h3>
+        <p class="muted">O histórico começa a partir de agora — cada visita registra um ponto para o mês atual.</p>
+        <canvas id="chart-networth"></canvas>
+      </div>
+    </section>
+
+    <!-- TRANSAÇÕES -->
+    <section id="view-transacoes" class="view">
+      <div class="view-header">
+        <h2>Transações</h2>
+        <div class="view-actions">
+          <input type="month" id="tx-filter-month" />
+          <select id="tx-filter-category"><option value="">Todas categorias</option></select>
+          <button class="btn secondary" id="btn-import-csv">Importar CSV</button>
+          <button class="btn secondary" id="btn-import-ofx">Importar OFX</button>
+          <button class="btn primary" id="btn-add-tx">+ Nova transação</button>
+        </div>
+      </div>
+      <input type="file" id="file-csv" accept=".csv" hidden>
+      <input type="file" id="file-ofx" accept=".ofx,.qfx" hidden>
+
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th class="right">Valor</th><th></th></tr>
+          </thead>
+          <tbody id="tx-table-body"></tbody>
+        </table>
+        <p class="empty-state" id="tx-empty" hidden>Nenhuma transação neste período. Adicione uma ou importe um extrato.</p>
+      </div>
+    </section>
+
+    <!-- INVESTIMENTOS -->
+    <section id="view-investimentos" class="view">
+      <div class="view-header">
+        <h2>Investimentos</h2>
+        <div class="view-actions">
+          <button class="btn primary" id="btn-add-inv">+ Novo investimento</button>
+        </div>
+      </div>
+
+      <div class="cards-grid two-col">
+        <div class="card">
+          <h3>Alocação atual x perfil (<span id="inv-risk-label">moderado</span>)</h3>
+          <canvas id="chart-inv-target"></canvas>
+        </div>
+        <div class="card">
+          <h3>Resumo</h3>
+          <div class="cards-grid" id="inv-summary-cards"></div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Nome</th><th>Classe</th><th>Liquidez</th><th class="right">Investido</th><th class="right">Valor atual</th><th class="right">Rentabilidade</th><th class="right">XIRR a.a.</th><th></th></tr>
+          </thead>
+          <tbody id="inv-table-body"></tbody>
+        </table>
+        <p class="empty-state" id="inv-empty" hidden>Nenhum investimento cadastrado ainda.</p>
+      </div>
+    </section>
+
+    <!-- METAS -->
+    <section id="view-metas" class="view">
+      <div class="view-header">
+        <h2>Metas de economia</h2>
+        <div class="view-actions">
+          <button class="btn primary" id="btn-add-goal">+ Nova meta</button>
+        </div>
+      </div>
+      <div class="cards-grid two-col" id="goals-list"></div>
+      <p class="empty-state" id="goals-empty" hidden>Nenhuma meta cadastrada ainda. Crie uma meta para juntar dinheiro com um objetivo (ex: viagem, reserva, entrada de imóvel).</p>
+    </section>
+
+    <!-- ORÇAMENTO -->
+    <section id="view-orcamento" class="view">
+      <div class="view-header">
+        <h2>Orçamento por categoria</h2>
+        <div class="view-actions">
+          <input type="month" id="budget-filter-month" />
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Categoria</th><th class="right">Limite mensal</th><th class="right">Gasto no mês</th><th>Progresso</th><th></th></tr>
+          </thead>
+          <tbody id="budget-table-body"></tbody>
+        </table>
+      </div>
+
+      <div class="view-header" style="margin-top:24px">
+        <h2>Contas fixas</h2>
+        <div class="view-actions">
+          <button class="btn primary" id="btn-add-bill">+ Nova conta fixa</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Nome</th><th>Categoria</th><th class="right">Valor previsto</th><th>Dia de vencimento</th><th></th></tr>
+          </thead>
+          <tbody id="bills-table-body"></tbody>
+        </table>
+        <p class="empty-state" id="bills-empty" hidden>Nenhuma conta fixa cadastrada. Cadastre contas recorrentes (aluguel, internet, assinaturas) para receber lembretes de vencimento.</p>
+      </div>
+    </section>
+
+    <!-- OPORTUNIDADES -->
+    <section id="view-oportunidades" class="view">
+      <div class="view-header">
+        <h2>Oportunidades e alertas</h2>
+      </div>
+
+      <div class="card">
+        <h3>Independência financeira (FIRE)</h3>
+        <p class="muted">Baseado na sua despesa média mensal, patrimônio atual e sobra mensal (últimos 3 meses).</p>
+        <div class="view-actions" style="margin-bottom:14px">
+          <label>Taxa de retirada segura (% a.a.)
+            <input type="number" id="fire-withdrawal-rate" min="1" max="10" step="0.5" style="width:90px">
+          </label>
+          <label>Retorno esperado da carteira (% a.a.)
+            <input type="number" id="fire-expected-return" min="0" max="30" step="0.5" style="width:90px">
+          </label>
+        </div>
+        <div class="cards-grid" id="fire-summary-cards"></div>
+        <div class="progress-bar" style="margin-top:12px;height:14px">
+          <div class="progress-bar-fill" id="fire-progress-bar" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div id="opportunities-full-list" class="opportunities-list"></div>
+    </section>
+
+    <!-- CONFIGURAÇÕES -->
+    <section id="view-configuracoes" class="view">
+      <div class="view-header"><h2>Configurações</h2></div>
+
+      <div class="card">
+        <h3>Perfil de investidor</h3>
+        <p class="muted">Usado para comparar sua alocação atual com uma referência e sugerir ajustes.</p>
+        <select id="cfg-risk-profile">
+          <option value="conservador">Conservador</option>
+          <option value="moderado">Moderado</option>
+          <option value="arrojado">Arrojado</option>
+        </select>
+      </div>
+
+      <div class="card">
+        <h3>Meta de reserva de emergência</h3>
+        <p class="muted">Quantos meses de despesas você quer manter em ativos de alta liquidez.</p>
+        <input type="number" id="cfg-emergency-months" min="1" max="24" step="1">
+      </div>
+
+      <div class="card">
+        <h3>Categorias de despesa</h3>
+        <p class="muted">Edite a lista separada por vírgula.</p>
+        <textarea id="cfg-expense-categories" rows="3"></textarea>
+        <button class="btn secondary" id="btn-save-categories">Salvar categorias</button>
+      </div>
+
+      <div class="card">
+        <h3>Regras de categorização automática</h3>
+        <p class="muted">Quando a descrição de uma transação nova (manual ou importada) contiver a palavra-chave, a categoria é aplicada automaticamente.</p>
+        <div class="csv-mapping">
+          <label>Palavra-chave <input type="text" id="rule-keyword" placeholder="ex: uber, netflix, ifood"></label>
+          <label>Tipo
+            <select id="rule-type">
+              <option value="expense">Despesa</option>
+              <option value="income">Receita</option>
+            </select>
+          </label>
+          <label>Categoria <select id="rule-category"></select></label>
+          <label>&nbsp;<button class="btn secondary" id="btn-add-rule" type="button">+ Adicionar regra</button></label>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Palavra-chave</th><th>Tipo</th><th>Categoria</th><th></th></tr></thead>
+            <tbody id="rules-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Dados</h3>
+        <p class="muted">Seus dados ficam apenas no seu navegador (localStorage). Faça backup regularmente.</p>
+        <div class="view-actions">
+          <button class="btn secondary" id="btn-export-json">Exportar backup (JSON)</button>
+          <button class="btn secondary" id="btn-import-json">Importar backup (JSON)</button>
+          <button class="btn danger" id="btn-reset-data">Apagar todos os dados</button>
+        </div>
+        <input type="file" id="file-json" accept=".json" hidden>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- MODAL: transação -->
+<div class="modal-overlay" id="modal-tx" hidden>
+  <div class="modal">
+    <h3 id="modal-tx-title">Nova transação</h3>
+    <form id="form-tx">
+      <input type="hidden" id="tx-id">
+      <label>Tipo
+        <select id="tx-type">
+          <option value="expense">Despesa</option>
+          <option value="income">Receita</option>
+        </select>
+      </label>
+      <label>Data <input type="date" id="tx-date" required></label>
+      <label>Descrição <input type="text" id="tx-description" required></label>
+      <label>Categoria
+        <select id="tx-category"></select>
+      </label>
+      <label>Conta <input type="text" id="tx-account" placeholder="ex: Nubank, Carteira"></label>
+      <label>Valor (R$) <input type="number" step="0.01" min="0" id="tx-amount" required></label>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cancel-tx">Cancelar</button>
+        <button type="submit" class="btn primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: investimento -->
+<div class="modal-overlay" id="modal-inv" hidden>
+  <div class="modal">
+    <h3 id="modal-inv-title">Novo investimento</h3>
+    <form id="form-inv">
+      <input type="hidden" id="inv-id">
+      <label>Nome <input type="text" id="inv-name" placeholder="ex: Tesouro Selic 2029" required></label>
+      <label>Classe
+        <select id="inv-class">
+          <option value="renda_fixa">Renda Fixa</option>
+          <option value="acoes">Ações</option>
+          <option value="fiis">Fundos Imobiliários (FIIs)</option>
+          <option value="internacional">Internacional</option>
+          <option value="cripto">Cripto</option>
+          <option value="outros">Outros</option>
+        </select>
+      </label>
+      <label>Liquidez
+        <select id="inv-liquidity">
+          <option value="alta">Alta (resgate imediato/D+1)</option>
+          <option value="media">Média (dias a semanas)</option>
+          <option value="baixa">Baixa (meses/anos ou vencimento)</option>
+        </select>
+      </label>
+      <label id="inv-date-label">Data do aporte inicial <input type="date" id="inv-date" required></label>
+      <label id="inv-invested-label">Valor do aporte inicial (R$) <input type="number" step="0.01" min="0" id="inv-invested" required></label>
+      <label>Valor atual (R$) <input type="number" step="0.01" min="0" id="inv-current" required></label>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cancel-inv">Cancelar</button>
+        <button type="submit" class="btn primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: novo aporte em investimento existente -->
+<div class="modal-overlay" id="modal-contribution" hidden>
+  <div class="modal">
+    <h3>Novo aporte</h3>
+    <form id="form-contribution">
+      <input type="hidden" id="contrib-inv-id">
+      <label>Data <input type="date" id="contrib-date" required></label>
+      <label>Valor aportado (R$) <input type="number" step="0.01" min="0" id="contrib-amount" required></label>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cancel-contrib">Cancelar</button>
+        <button type="submit" class="btn primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: meta de economia -->
+<div class="modal-overlay" id="modal-goal" hidden>
+  <div class="modal">
+    <h3 id="modal-goal-title">Nova meta</h3>
+    <form id="form-goal">
+      <input type="hidden" id="goal-id">
+      <label>Nome <input type="text" id="goal-name" placeholder="ex: Viagem, Reserva, Entrada do apê" required></label>
+      <label>Valor alvo (R$) <input type="number" step="0.01" min="0" id="goal-target" required></label>
+      <label>Data alvo (opcional) <input type="date" id="goal-date"></label>
+      <label>Valor já guardado (R$) <input type="number" step="0.01" min="0" id="goal-saved" required></label>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cancel-goal">Cancelar</button>
+        <button type="submit" class="btn primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: conta fixa -->
+<div class="modal-overlay" id="modal-bill" hidden>
+  <div class="modal">
+    <h3 id="modal-bill-title">Nova conta fixa</h3>
+    <form id="form-bill">
+      <input type="hidden" id="bill-id">
+      <label>Nome <input type="text" id="bill-name" placeholder="ex: Aluguel, Internet, Academia" required></label>
+      <label>Categoria <select id="bill-category"></select></label>
+      <label>Valor previsto (R$) <input type="number" step="0.01" min="0" id="bill-amount" required></label>
+      <label>Dia de vencimento (1-31) <input type="number" id="bill-due-day" min="1" max="31" required></label>
+      <div class="modal-actions">
+        <button type="button" class="btn secondary" id="btn-cancel-bill">Cancelar</button>
+        <button type="submit" class="btn primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: importar CSV (mapeamento de colunas) -->
+<div class="modal-overlay" id="modal-csv" hidden>
+  <div class="modal wide">
+    <h3>Importar CSV</h3>
+    <p class="muted">Selecione qual coluna do seu arquivo corresponde a cada campo.</p>
+    <div class="csv-mapping" id="csv-mapping"></div>
+    <div class="table-wrap">
+      <table class="data-table" id="csv-preview-table"></table>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn secondary" id="btn-cancel-csv">Cancelar</button>
+      <button type="button" class="btn primary" id="btn-confirm-csv">Importar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
