@@ -1286,10 +1286,15 @@ $("#form-bill").addEventListener("submit", (e) => {
 // ============================================================
 // OPORTUNIDADES + FIRE
 // ============================================================
+const OPPORTUNITY_LEVEL_LABELS = { critical: "Crítico", warning: "Atenção", info: "Info", positive: "Oportunidade" };
+
 function renderOpportunityCards(list) {
   if (list.length === 0) return `<p class="empty-opportunities">Nenhum alerta no momento.</p>`;
   return list.map((o) => `
     <div class="opportunity level-${o.level}">
+      <div class="opportunity-head">
+        <span class="opportunity-chip level-${o.level}">${OPPORTUNITY_LEVEL_LABELS[o.level] || o.level}</span>
+      </div>
       <div class="opportunity-title">${escapeHtml(o.title)}</div>
       <div class="opportunity-desc">${escapeHtml(o.desc)}</div>
     </div>
