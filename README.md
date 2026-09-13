@@ -4,14 +4,16 @@ App de finanças pessoais 100% client-side: controle de gastos e renda, contas e
 
 ## Como usar
 
-Como o app usa ES Modules, é preciso servir os arquivos por HTTP (não abrir o `index.html` direto com `file://`):
+Como o app usa ES Modules, é preciso servir os arquivos por HTTP (não abrir o `index.html` direto com `file://`). Qualquer servidor local funciona — por exemplo:
 
 ```bash
 python3 -m http.server 8000
 # depois acesse http://localhost:8000
 ```
 
-Ou publique a pasta em qualquer hospedagem estática (GitHub Pages, Netlify, Vercel, etc). É instalável como PWA (manifest + service worker) e funciona offline depois da primeira visita.
+Não há nenhuma dependência externa: o Chart.js vem embutido em `js/vendor/chart.umd.js` (nenhum CDN é carregado), então o app funciona 100% offline desde a primeira visita, sem precisar de internet nenhuma vez — inclusive num computador sem rede. Rodar localmente assim também é a forma mais simples de usar o app: os dados ficam no `localStorage` do navegador daquela máquina, exatamente como rodando de qualquer hospedagem.
+
+Se preferir, também dá para publicar a pasta em qualquer hospedagem estática (GitHub Pages, Netlify, Vercel, etc) ou instalar como PWA (manifest + service worker).
 
 ## Funcionalidades
 

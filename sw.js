@@ -16,6 +16,7 @@ const APP_SHELL = [
   "./js/loans.js",
   "./js/recurring.js",
   "./js/quotes.js",
+  "./js/vendor/chart.umd.js",
 ];
 
 self.addEventListener("install", (event) => {
