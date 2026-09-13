@@ -51,6 +51,59 @@ export function uniqueSorted(list) {
   return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
+export function formatDateBR(iso) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+export function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+// Uma transação normalmente tem uma única categoria; se foi dividida (splits),
+// cada pedaço deve contar para sua própria categoria nas somas de orçamento/gráficos.
+export function categoryBreakdown(tx) {
+  if (Array.isArray(tx.splits) && tx.splits.length > 0) return tx.splits;
+  return [{ category: tx.category, amount: tx.amount }];
+}
+
+// Lista de meses (YYYY-MM) estritamente entre `fromMonth` (exclusive) e `toMonth` (inclusive).
+// Usada para gerar lançamentos recorrentes que ficaram pendentes desde a última visita.
+export function monthsBetweenExclusive(fromMonth, toMonth) {
+  const months = [];
+  let cursor = fromMonth ? addMonths(fromMonth, 1) : toMonth;
+  let guard = 0;
+  while (cursor <= toMonth && guard < 600) {
+    months.push(cursor);
+    if (cursor === toMonth) break;
+    cursor = addMonths(cursor, 1);
+    guard++;
+  }
+  return months;
+}
+
+// Duas transações são consideradas duplicadas se caírem na mesma data, mesmo valor
+// (em módulo) e descrição normalizada igual — heurística usada ao importar CSV/OFX
+// para evitar reimportar o mesmo extrato duas vezes.
+export function isDuplicateTransaction(candidate, existing) {
+  const normDesc = (s) => (s || "").trim().toLowerCase();
+  return existing.some((t) =>
+    t.date === candidate.date &&
+    Math.abs(t.amount - candidate.amount) < 0.005 &&
+    t.type === candidate.type &&
+    normDesc(t.description) === normDesc(candidate.description)
+  );
+}
+
+// Hash simples (SHA-256, hex) usado só para um bloqueio local por PIN — não é uma
+// defesa criptográfica real (os dados continuam em texto plano no localStorage),
+// apenas evita que o PIN fique salvo em claro e dificulta uma espiada casual.
+export async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export function debounce(fn, wait = 250) {
   let t;
   return (...args) => {

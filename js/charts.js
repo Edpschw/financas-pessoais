@@ -74,6 +74,37 @@ export function netWorthChart(canvasId, labels, values) {
   });
 }
 
+export function budgetHistoryChart(canvasId, labels, budgetedSeries, actualSeries) {
+  renderChart(canvasId, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "Orçado", data: budgetedSeries, backgroundColor: "#c9d3de" },
+        { label: "Realizado", data: actualSeries, backgroundColor: "#2f6fed" },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "bottom" } },
+      scales: { y: { beginAtZero: true } },
+    },
+  });
+}
+
+export function accountsBalanceChart(canvasId, labels, values) {
+  renderChart(canvasId, {
+    type: "bar",
+    data: { labels, datasets: [{ label: "Saldo", data: values, backgroundColor: values.map((v) => (v < 0 ? "#d9433f" : "#1b9e5a")) }] },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true } },
+    },
+  });
+}
+
 export function targetVsActualChart(canvasId, labels, actual, target) {
   renderChart(canvasId, {
     type: "bar",

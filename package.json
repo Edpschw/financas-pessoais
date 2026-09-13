@@ -1,0 +1,9 @@
+{
+  "name": "financas-pessoais",
+  "private": true,
+  "type": "module",
+  "description": "App de finanças pessoais 100% client-side (sem build step) — este package.json existe só para rodar a suíte de testes com o test runner nativo do Node.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  }
+}

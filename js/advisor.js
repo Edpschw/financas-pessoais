@@ -1,4 +1,6 @@
-import { monthKey, lastNMonths, todayMonthKey, CLASS_LABELS, RISK_PROFILES, formatCurrency, formatPercent } from "./utils.js";
+import { monthKey, lastNMonths, todayMonthKey, CLASS_LABELS, RISK_PROFILES, formatCurrency, formatPercent, categoryBreakdown } from "./utils.js";
+import { creditCardInvoices } from "./accounts.js";
+import { loanMonthlyPayment, remainingBalance } from "./loans.js";
 
 function monthlyTotals(transactions, months) {
   const totals = {};
@@ -17,7 +19,7 @@ function average(list) {
 }
 
 export function computeOpportunities(state) {
-  const { transactions, investments, budgets, settings, bills } = state;
+  const { transactions, investments, budgets, settings, bills, accounts, loans } = state;
   const opportunities = [];
 
   const months3 = lastNMonths(3);
@@ -106,7 +108,8 @@ export function computeOpportunities(state) {
   const expenseByCategory = {};
   transactions
     .filter((t) => t.type === "expense" && monthKey(t.date) === currentMonth)
-    .forEach((t) => { expenseByCategory[t.category] = (expenseByCategory[t.category] || 0) + t.amount; });
+    .flatMap(categoryBreakdown)
+    .forEach((s) => { expenseByCategory[s.category] = (expenseByCategory[s.category] || 0) + s.amount; });
 
   budgets.forEach((b) => {
     const spent = expenseByCategory[b.category] || 0;
@@ -137,6 +140,53 @@ export function computeOpportunities(state) {
       });
     }
   });
+
+  // 7. Fatura de cartão de crédito alta em relação à renda
+  (accounts || []).filter((a) => a.type === "cartao_credito").forEach((acc) => {
+    const invoices = creditCardInvoices(state, acc.id);
+    const current = invoices[0];
+    if (!current || avgIncome <= 0) return;
+    const ratio = (current.total / avgIncome) * 100;
+    if (ratio >= 50) {
+      opportunities.push({
+        level: "critical",
+        title: `Fatura do cartão "${acc.name}" compromete mais da metade da renda`,
+        desc: `A fatura do ciclo atual é ${formatCurrency(current.total)}, ${formatPercent(ratio)} da sua renda média mensal. Avalie renegociar ou reduzir gastos no cartão.`,
+      });
+    } else if (ratio >= 30) {
+      opportunities.push({
+        level: "warning",
+        title: `Fatura do cartão "${acc.name}" está alta`,
+        desc: `A fatura do ciclo atual é ${formatCurrency(current.total)} (${formatPercent(ratio)} da renda média mensal).`,
+      });
+    }
+  });
+
+  // 8. Comprometimento de renda com parcelas de empréstimos/financiamentos
+  const activeLoans = (loans || []).filter((l) => remainingBalance(l) > 0);
+  if (activeLoans.length > 0 && avgIncome > 0) {
+    const totalMonthlyPayment = activeLoans.reduce((s, l) => s + loanMonthlyPayment(l), 0);
+    const ratio = (totalMonthlyPayment / avgIncome) * 100;
+    if (ratio >= 30) {
+      opportunities.push({
+        level: ratio >= 50 ? "critical" : "warning",
+        title: "Parcelas de empréstimos comprometem boa parte da renda",
+        desc: `Suas parcelas somam ${formatCurrency(totalMonthlyPayment)}/mês, ${formatPercent(ratio)} da sua renda média. O recomendado geralmente é manter esse comprometimento abaixo de 30%.`,
+      });
+    }
+  }
+
+  // 9. Proventos/dividendos recebidos no mês (nota informativa/positiva)
+  const currentMonthForProceeds = todayMonthKey();
+  const proceedsThisMonth = investments.reduce((s, inv) =>
+    s + (inv.proceeds || []).filter((p) => monthKey(p.date) === currentMonthForProceeds).reduce((a, p) => a + p.amount, 0), 0);
+  if (proceedsThisMonth > 0) {
+    opportunities.push({
+      level: "positive",
+      title: "Proventos recebidos este mês",
+      desc: `Você recebeu ${formatCurrency(proceedsThisMonth)} em proventos/dividendos este mês. Considere reinvestir de acordo com seu perfil de risco.`,
+    });
+  }
 
   if (opportunities.length === 0) {
     opportunities.push({
