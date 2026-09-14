@@ -48,7 +48,7 @@ function guessColumn(headers, keywords) {
 export function guessMapping(headers) {
   return {
     date: guessColumn(headers, ["data", "date"]),
-    description: guessColumn(headers, ["descri", "histor", "memo", "description", "detalhe"]),
+    description: guessColumn(headers, ["descri", "histor", "memo", "description", "detalhe", "lanç", "lanc"]),
     amount: guessColumn(headers, ["valor", "amount", "value"]),
     type: guessColumn(headers, ["tipo", "type"]),
     category: guessColumn(headers, ["categ"]),
@@ -69,16 +69,30 @@ function normalizeType(raw) {
 
 // Exportada para reaproveitar em outros formatos de importação (Excel, PDF) que também
 // trazem valores em formato brasileiro (1.234,56).
+// Aceita tanto o formato brasileiro (1.234,56) quanto o americano (1,234.56): planilhas
+// exportadas pelo banco às vezes saem em um, às vezes no outro. A regra é simples — o
+// separador que aparece por último é o decimal; o outro é separador de milhar.
 export function parseBrazilianAmount(raw) {
-  if (!raw) return NaN;
-  let s = raw.replace(/[^\d,.-]/g, "");
-  // se tem vírgula e ponto, assume ponto = milhar, vírgula = decimal (padrão BR)
-  if (s.includes(",") && s.includes(".")) {
-    s = s.replace(/\./g, "").replace(",", ".");
-  } else if (s.includes(",")) {
-    s = s.replace(",", ".");
+  if (raw === undefined || raw === null) return NaN;
+  const s = String(raw).replace(/[^\d,.-]/g, "");
+  if (!s) return NaN;
+
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  const digitsOnly = s.replace("-", "");
+
+  let normalized = s;
+  if (lastComma >= 0 && lastDot >= 0) {
+    const decimalSep = lastComma > lastDot ? "," : ".";
+    const thousandSep = decimalSep === "," ? "." : ",";
+    normalized = s.split(thousandSep).join("").replace(decimalSep, ".");
+  } else if (lastComma >= 0) {
+    // vírgula sozinha é decimal, exceto quando é claramente milhar (1,234 / 1,234,567)
+    normalized = /^\d{1,3}(,\d{3})+$/.test(digitsOnly) ? s.split(",").join("") : s.replace(",", ".");
+  } else if (lastDot >= 0 && /^\d{1,3}(\.\d{3})+$/.test(digitsOnly)) {
+    normalized = s.split(".").join("");
   }
-  return parseFloat(s);
+  return parseFloat(normalized);
 }
 
 // DD/MM/YYYY (ou YY) -> YYYY-MM-DD. Retorna a string original se não bater o padrão BR

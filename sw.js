@@ -1,4 +1,7 @@
-const CACHE_NAME = "financas-pessoais-v1";
+// Cache do PWA. O nome da versão precisa mudar sempre que a lista de arquivos mudar:
+// o handler de activate apaga os caches de versões anteriores, evitando que o
+// navegador continue servindo uma versão antiga do app.
+const CACHE_NAME = "financas-pessoais-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -7,20 +10,13 @@ const APP_SHELL = [
   "./js/app.js",
   "./js/storage.js",
   "./js/utils.js",
-  "./js/advisor.js",
+  "./js/charts.js",
+  "./js/auto-import.js",
   "./js/csv-import.js",
   "./js/ofx-import.js",
-  "./js/categorize.js",
-  "./js/charts.js",
-  "./js/accounts.js",
-  "./js/loans.js",
-  "./js/recurring.js",
-  "./js/quotes.js",
-  "./js/auto-import.js",
   "./js/excel-import.js",
   "./js/pdf-import.js",
   "./js/json-import.js",
-  "./js/recurring-analysis.js",
   "./js/investment-flow.js",
   "./js/vendor/chart.umd.js",
   "./js/vendor/xlsx.full.min.js",
@@ -40,24 +36,22 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Stale-while-revalidate para os arquivos do próprio app: funciona offline depois
-// da primeira visita e atualiza o cache em segundo plano quando há rede.
+// Network-first para os arquivos do próprio app: com rede, sempre pega a versão atual
+// (evita ficar preso numa versão antiga depois de uma atualização); sem rede, cai no
+// cache e o app continua funcionando offline.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   if (!event.request.url.startsWith(self.location.origin)) return;
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(event.request)
+      .then((res) => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

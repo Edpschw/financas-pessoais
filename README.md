@@ -1,32 +1,49 @@
 # Finanças Pessoais
 
-App de finanças pessoais 100% client-side: controle de gastos e renda, contas e cartões, empréstimos, investimentos e sugestões de oportunidades — sem backend, sem conta, sem enviar seus dados a lugar nenhum. Tudo fica salvo no `localStorage` do seu navegador.
+Visualizador de finanças pessoais que lê uma pasta do seu computador — os extratos que você já baixa do banco — e mostra para onde o dinheiro foi. Sem backend, sem conta, sem digitar lançamento: tudo fica no seu navegador.
+
+Toda vez que o app abre, ele relê a pasta e incorpora os arquivos novos.
 
 ## Como usar
 
-Como o app usa ES Modules, é preciso servir os arquivos por HTTP (não abrir o `index.html` direto com `file://`). Qualquer servidor local funciona — por exemplo:
-
 ```bash
-python3 -m http.server 8000
+python3 dev-server.py 8000
 # depois acesse http://localhost:8000
 ```
 
-Não há nenhuma dependência externa: o Chart.js vem embutido em `js/vendor/chart.umd.js` (nenhum CDN é carregado), então o app funciona 100% offline desde a primeira visita, sem precisar de internet nenhuma vez — inclusive num computador sem rede. Rodar localmente assim também é a forma mais simples de usar o app: os dados ficam no `localStorage` do navegador daquela máquina, exatamente como rodando de qualquer hospedagem.
+Na primeira vez, clique em **Escolher pasta** e aponte para onde você salva os extratos. O navegador pede permissão de leitura uma vez; depois disso o app lê sozinho a cada abertura.
 
-Se preferir, também dá para publicar a pasta em qualquer hospedagem estática (GitHub Pages, Netlify, Vercel, etc) ou instalar como PWA (manifest + service worker).
+> Use o `dev-server.py` (e não `python3 -m http.server`): ele manda `Cache-Control: no-store`. Sem isso o navegador guarda uma versão antiga do app e você pode acabar vendo uma tela em branco depois de uma atualização.
 
-## Funcionalidades
+Precisa de um navegador baseado em Chromium (Chrome, Edge, Brave) — a API que lê pastas locais só existe neles. Nenhuma dependência é baixada de CDN: Chart.js, SheetJS e pdf.js vêm embutidos em `js/vendor/`, então o app funciona offline desde a primeira visita.
 
-- **Dashboard**: receita x despesa (período customizável), patrimônio líquido total (contas + investimentos − dívidas), alocação de carteira, despesas por categoria, saldo por conta e evolução do patrimônio ao longo do tempo.
-- **Transações**: lançamento manual, divisão de uma transação em várias categorias, parcelamento (gera N lançamentos mensais automaticamente), importação de extratos **CSV** (com mapeamento de colunas e detecção de duplicatas) e **OFX**, regras de categorização automática por palavra-chave (editáveis), busca/filtros avançados (texto, conta, categoria, faixa de valor), ordenação, paginação, seleção em massa e exportação para CSV.
-- **Contas**: contas correntes, poupança, carteira e cartão de crédito, com saldo calculado a partir das transações; transferências entre contas; fatura de cartão de crédito agrupada por ciclo de fechamento.
-- **Investimentos**: cadastro por classe de ativo (renda fixa, ações, FIIs, internacional, cripto), múltiplos aportes por ativo, registro de proventos/dividendos, cálculo de rentabilidade anualizada via **XIRR** (mesmo método usado por rastreadores de carteira como Portfolio Performance) e cotação automática opcional (ticker + quantidade) via API pública de mercado.
-- **Dívidas**: empréstimos e financiamentos com amortização pelo sistema Price (parcela fixa), saldo devedor projetado e registro de pagamentos.
-- **Metas de economia** (piggy banks): valor alvo, data alvo, progresso e sugestão automática de quanto guardar por mês para chegar à meta na data escolhida.
-- **Orçamento por categoria** (com rollover opcional do saldo não usado para o mês seguinte) e histórico orçado x realizado; **contas fixas** com alerta de vencimento e geração automática opcional da transação todo mês.
-- **Oportunidades**: motor de regras que aponta reserva de emergência baixa/excessiva, concentração de risco, desvio do seu perfil de investidor, contas a vencer, orçamento estourado, sobra mensal disponível para investir, fatura de cartão alta em relação à renda, comprometimento de renda com parcelas de empréstimos e proventos recebidos no mês.
-- **Calculadora de independência financeira (FIRE)**: número-alvo de patrimônio, progresso e tempo estimado, com taxa de retirada e retorno esperado configuráveis.
-- **Segurança/UX**: bloqueio opcional por PIN (hash local, não é criptografia dos dados), tema claro/escuro/automático, exclusões com "desfazer", app instalável e utilizável offline (PWA).
+## O que ele lê
+
+| Formato | O que é |
+|---|---|
+| `.csv` | Extrato exportado do banco. Detecta sozinho as colunas de data, descrição, valor, tipo, categoria e conta. |
+| `.pdf` | Extrato do banco (layout do Itaú validado). Linhas que não dá para interpretar viram aviso, sem travar o arquivo. |
+| `.xlsx` / `.xls` | Planilha de extrato ou **fatura de cartão** (acha a tabela mesmo quando há um bloco com nome/agência/conta antes). |
+| `.ofx` / `.qfx` | Extrato no padrão OFX. |
+| `.json` | Backup exportado pelo próprio app — soma transações e investimentos ao que já existe. |
+| `.jpg` / `.png` | Reconhecido, mas não processado (precisaria de OCR). |
+
+O mesmo lançamento vindo de dois arquivos (por exemplo o CSV e o PDF do mesmo mês) é importado uma vez só.
+
+## As três telas
+
+- **Receita e gastos** — quanto entra e quanto sai por mês, gastos por categoria, os maiores gastos do período e a tabela mês a mês.
+- **Investimentos** — carteira, alocação por classe e os proventos que caíram na conta.
+- **Base de dados** — o que foi lido de cada arquivo, possíveis duplicatas e todos os lançamentos, com busca e filtros.
+
+## Duas contas que o app não soma (de propósito)
+
+- **Compra e resgate de investimento**: é dinheiro mudando de lugar, não gasto nem renda. Uma aplicação de R$ 60 mil não deve aparecer como "despesa do mês".
+- **Itens da fatura do cartão**: o extrato já cobra a fatura como um pagamento único. Contar os itens junto somaria o mesmo gasto duas vezes — o detalhe fica disponível na Base de dados.
+
+## Privacidade
+
+Não há backend, telemetria nem integração com bancos. Os dados ficam no `localStorage` do seu navegador e os arquivos nunca saem da sua máquina.
 
 ## Rodando os testes
 
@@ -34,25 +51,6 @@ Se preferir, também dá para publicar a pasta em qualquer hospedagem estática 
 npm test
 ```
 
-Cobre a lógica pura (sem DOM): XIRR, parsing de CSV/detecção de duplicatas, amortização de empréstimos, saldo de contas/fatura de cartão e geração de transações recorrentes.
-
-## O que foi deliberadamente deixado de fora
-
-Alguns pedidos comuns de app de finanças exigem um backend ou trocam a promessa central do projeto (rodar 100% no seu navegador, sem enviar dados a lugar nenhum) — por isso não foram implementados:
-
-- **Open Finance / integração com banco ou corretora**: exigiria credenciais OAuth e um servidor para intermediar a conexão. A "cotação automática" de investimentos é diferente: é uma consulta pública de preço de mercado, sem vincular nenhuma conta.
-- **Notificações por e-mail/push de contas a vencer**: push real exige um servidor de notificações; o que existe é o alerta dentro do app (aba Oportunidades/Dashboard) quando ele está aberto.
-- **Sincronização entre dispositivos/múltiplos usuários**: sem servidor não há como sincronizar. O caminho continua sendo exportar/importar o backup JSON manualmente.
-- **Cálculo completo de imposto de renda (DARF, custo médio para IR)**: as regras variam e são complexas demais para uma estimativa confiável; o app mostra rentabilidade e ganho, mas não gera nada para declaração.
-- **Criptografia forte dos dados salvos**: o PIN é só uma trava de acesso simples (hash local comparado no login); os dados continuam em texto plano no `localStorage`, como antes.
-
 ## Inspiração
 
-Ideias e boas práticas adaptadas de projetos open-source de referência:
-[Firefly III](https://github.com/firefly-iii/firefly-iii) (regras de categorização, contas fixas, metas de poupança, contas e cartões),
-[Ghostfolio](https://github.com/ghostfolio/ghostfolio) (calculadora FIRE, alertas de carteira) e
-[Portfolio Performance](https://github.com/portfolio-performance/portfolio) / [Paisa](https://github.com/ananthakumaran/paisa) (rentabilidade via XIRR).
-
-## Privacidade
-
-Não há backend, não há telemetria e não há integração com bancos/corretoras (a cotação automática, quando usada, é uma consulta pública de preço, opcional). Todos os dados ficam no `localStorage` do navegador — use **Configurações → Exportar backup (JSON)** regularmente para não perder seus dados.
+Ideias adaptadas de projetos open-source de referência: [Firefly III](https://github.com/firefly-iii/firefly-iii), [Ghostfolio](https://github.com/ghostfolio/ghostfolio) e [Portfolio Performance](https://github.com/portfolio-performance/portfolio).

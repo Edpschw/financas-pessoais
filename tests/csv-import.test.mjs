@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCSV, guessMapping, rowsToTransactions } from "../js/csv-import.js";
+import { parseCSV, guessMapping, rowsToTransactions, parseBrazilianAmount } from "../js/csv-import.js";
 
 test("parseCSV: detecta delimitador ; e separa cabeçalho/linhas", () => {
   const text = "Data;Descricao;Valor\n01/05/2024;Mercado;-100,50\n02/05/2024;Salario;5000,00\n";
@@ -77,4 +77,15 @@ test("rowsToTransactions: sem coluna de conta mapeada, usa o rótulo padrão inf
   const mapping = { date: 0, description: 1, amount: 2 };
   const txs = rowsToTransactions(rows, mapping, "Outros", "Importado (OFX)");
   assert.equal(txs[0].account, "Importado (OFX)");
+});
+
+test("parseBrazilianAmount: entende formato BR e americano (planilha do banco mistura os dois)", () => {
+  assert.equal(parseBrazilianAmount("1.234,56"), 1234.56);   // BR
+  assert.equal(parseBrazilianAmount("4,443.71"), 4443.71);   // US
+  assert.equal(parseBrazilianAmount("-1.234,50"), -1234.5);
+  assert.equal(parseBrazilianAmount("R$ 210,32"), 210.32);
+  assert.equal(parseBrazilianAmount("46.97"), 46.97);        // decimal simples
+  assert.equal(parseBrazilianAmount("1.234"), 1234);         // milhar BR sem decimais
+  assert.equal(parseBrazilianAmount("13"), 13);
+  assert.ok(Number.isNaN(parseBrazilianAmount("")));
 });

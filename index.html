@@ -9,771 +9,193 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-<div id="lock-screen" class="lock-screen" hidden>
-  <div class="lock-card">
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-    <h2>Finanças Pessoais</h2>
-    <p class="muted">Digite seu PIN para continuar.</p>
-    <form id="form-unlock">
-      <input type="password" inputmode="numeric" pattern="[0-9]*" id="unlock-pin" placeholder="PIN" autocomplete="off" required>
-      <button type="submit" class="btn primary">Entrar</button>
-    </form>
-    <p class="error-text" id="unlock-error" hidden>PIN incorreto.</p>
+<header class="topbar">
+  <div class="brand">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="13" width="4" height="8" rx="1" fill="#d4a94e"/><rect x="10" y="8" width="4" height="13" rx="1" fill="#d4a94e"/><rect x="17" y="3" width="4" height="18" rx="1" fill="#d4a94e"/></svg>
+    <span>Finanças Pessoais</span>
   </div>
-</div>
 
-<div class="app" id="app-root" hidden>
+  <nav class="tabs" id="tabs">
+    <button class="tab-btn active" data-view="fluxo" type="button">Receita e gastos</button>
+    <button class="tab-btn" data-view="investimentos" type="button">Investimentos</button>
+    <button class="tab-btn" data-view="dados" type="button">Base de dados</button>
+  </nav>
 
-  <aside class="sidebar">
-    <div class="brand">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="13" width="4" height="8" rx="1" fill="#d4a94e"/><rect x="10" y="8" width="4" height="13" rx="1" fill="#d4a94e"/><rect x="17" y="3" width="4" height="18" rx="1" fill="#d4a94e"/></svg>
-      <span>Finanças Pessoais</span>
+  <div class="topbar-right">
+    <span class="folder-pill" id="folder-pill" hidden>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span id="folder-name">—</span>
+    </span>
+    <button class="btn ghost small" id="btn-refresh" type="button" hidden>Atualizar</button>
+    <button class="btn ghost small" id="btn-folder" type="button">Escolher pasta</button>
+    <button class="icon-btn" id="btn-theme" type="button" title="Alternar tema" aria-label="Alternar tema">
+      <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
+      <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ============ 1. RECEITA E GASTOS ============ -->
+  <section id="view-fluxo" class="view active">
+    <div class="view-header">
+      <div>
+        <h1>Receita e gastos</h1>
+        <p class="muted" id="fluxo-subtitle">—</p>
+      </div>
+      <label class="field-inline">Período
+        <select id="fluxo-range">
+          <option value="6">Últimos 6 meses</option>
+          <option value="12" selected>Últimos 12 meses</option>
+          <option value="24">Últimos 24 meses</option>
+        </select>
+      </label>
     </div>
-    <nav class="tabs" id="tabs">
-      <button class="tab-btn active" data-view="dashboard">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-        <span>Dashboard</span>
-      </button>
-      <button class="tab-btn" data-view="transacoes">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h14"/><path d="M13 3l4 4-4 4"/><path d="M21 17H7"/><path d="M11 21l-4-4 4-4"/></svg>
-        <span>Transações</span>
-      </button>
-      <button class="tab-btn" data-view="contas">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18"/><circle cx="17" cy="14.5" r="1" fill="currentColor" stroke="none"/></svg>
-        <span>Contas</span>
-      </button>
-      <button class="tab-btn" data-view="investimentos">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
-        <span>Investimentos</span>
-      </button>
-      <button class="tab-btn" data-view="dividas">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="17" r="2.5"/><path d="M18 6L6 18"/></svg>
-        <span>Dívidas</span>
-      </button>
-      <button class="tab-btn" data-view="metas">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="0.6" fill="currentColor" stroke="none"/></svg>
-        <span>Metas</span>
-      </button>
-      <button class="tab-btn" data-view="orcamento">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 8 8h-8V4z" fill="currentColor" stroke="none"/></svg>
-        <span>Orçamento</span>
-      </button>
-      <button class="tab-btn" data-view="oportunidades">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 12 6 8z"/><path d="M9.5 17a2.5 2.5 0 0 0 5 0"/></svg>
-        <span>Oportunidades</span>
-      </button>
-      <button class="tab-btn" data-view="dados">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>
-        <span>Dados</span>
-      </button>
-      <button class="tab-btn" data-view="analise-mensal">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
-        <span>Análise Mensal</span>
-      </button>
-      <button class="tab-btn" data-view="recorrentes">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-        <span>Recorrentes</span>
-      </button>
-      <button class="tab-btn" data-view="configuracoes">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="none"/></svg>
-        <span>Configurações</span>
-      </button>
-    </nav>
-    <div class="sidebar-foot">
-      <button class="icon-btn" id="btn-theme-toggle" title="Alternar tema" type="button">
-        <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
-        <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>
-        <span class="theme-label">Tema</span>
-      </button>
+
+    <div class="stat-grid" id="fluxo-stats"></div>
+
+    <div class="panel">
+      <h2>Receita × despesa por mês</h2>
+      <p class="muted small">Compra e resgate de investimentos ficam de fora — é dinheiro mudando de lugar, não gasto nem renda.</p>
+      <div class="chart-box"><canvas id="chart-fluxo"></canvas></div>
     </div>
-  </aside>
 
-  <div class="content">
-  <main id="main">
-
-    <!-- DASHBOARD -->
-    <section id="view-dashboard" class="view active">
-      <div class="month-switcher">
-        <button id="dash-prev-month" class="icon-btn">‹</button>
-        <h2 id="dash-month-label">—</h2>
-        <button id="dash-next-month" class="icon-btn">›</button>
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Gastos por categoria</h2>
+        <p class="muted small">Soma do período selecionado.</p>
+        <div class="chart-box short"><canvas id="chart-categorias"></canvas></div>
       </div>
-
-      <div class="cards-grid">
-        <div class="card stat">
-          <span class="stat-label">Receita do mês</span>
-          <span class="stat-value positive" id="stat-income">R$ 0,00</span>
-        </div>
-        <div class="card stat">
-          <span class="stat-label">Despesas do mês</span>
-          <span class="stat-value negative" id="stat-expense">R$ 0,00</span>
-        </div>
-        <div class="card stat">
-          <span class="stat-label">Saldo do mês</span>
-          <span class="stat-value" id="stat-balance">R$ 0,00</span>
-        </div>
-        <div class="card stat">
-          <span class="stat-label">Patrimônio líquido total</span>
-          <span class="stat-value" id="stat-networth">R$ 0,00</span>
-        </div>
+      <div class="panel">
+        <h2>Maiores gastos do período</h2>
+        <p class="muted small">Lançamentos agrupados por descrição.</p>
+        <div class="rank-list" id="fluxo-top-expenses"></div>
       </div>
+    </div>
 
-      <div class="cards-grid two-col">
-        <div class="card">
-          <div class="view-header" style="margin-bottom:6px">
-            <h3 style="margin:0">Receitas x Despesas</h3>
-            <div class="view-actions">
-              <input type="month" id="dash-range-from" title="De">
-              <input type="month" id="dash-range-to" title="Até">
-            </div>
-          </div>
-          <canvas id="chart-cashflow"></canvas>
-        </div>
-        <div class="card">
-          <h3>Alocação de investimentos</h3>
-          <canvas id="chart-allocation"></canvas>
-        </div>
+    <div class="panel">
+      <h2>Mês a mês</h2>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Mês</th><th class="right">Receita</th><th class="right">Despesa</th><th class="right">Saldo</th><th class="right">Acumulado</th></tr></thead>
+          <tbody id="fluxo-table"></tbody>
+        </table>
       </div>
+    </div>
+  </section>
 
-      <div class="cards-grid two-col">
-        <div class="card">
-          <h3>Despesas por categoria (mês atual)</h3>
-          <canvas id="chart-categories"></canvas>
-        </div>
-        <div class="card" id="dash-opportunities-card">
-          <h3>Alertas e oportunidades</h3>
-          <div id="dash-opportunities-list" class="opportunities-list"></div>
-        </div>
+  <!-- ============ 2. INVESTIMENTOS ============ -->
+  <section id="view-investimentos" class="view">
+    <div class="view-header">
+      <div>
+        <h1>Investimentos</h1>
+        <p class="muted" id="inv-subtitle">—</p>
       </div>
+    </div>
 
-      <div class="cards-grid two-col">
-        <div class="card">
-          <h3>Patrimônio investido ao longo do tempo</h3>
-          <p class="muted">O histórico começa a partir de agora — cada visita registra um ponto para o mês atual.</p>
-          <canvas id="chart-networth"></canvas>
-        </div>
-        <div class="card">
-          <h3>Saldo por conta</h3>
-          <canvas id="chart-accounts"></canvas>
-        </div>
+    <div class="stat-grid" id="inv-stats"></div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Alocação por classe</h2>
+        <p class="muted small" id="aloc-empty" hidden>Nenhuma posição para distribuir. Coloque um backup JSON com investimentos na pasta.</p>
+        <div class="chart-box short" id="aloc-box"><canvas id="chart-alocacao"></canvas></div>
       </div>
-    </section>
+      <div class="panel">
+        <h2>Proventos recebidos</h2>
+        <p class="muted small">Dividendos, JCP e rendimentos identificados nos extratos.</p>
+        <div class="chart-box short"><canvas id="chart-proventos"></canvas></div>
+      </div>
+    </div>
 
-    <!-- TRANSAÇÕES -->
-    <section id="view-transacoes" class="view">
-      <div class="view-header">
+    <div class="panel">
+      <h2>Carteira</h2>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Ativo</th><th>Classe</th><th>Liquidez</th><th class="right">Valor atual</th><th class="pct-col">% da carteira</th></tr></thead>
+          <tbody id="inv-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3. BASE DE DADOS ============ -->
+  <section id="view-dados" class="view">
+    <div class="view-header">
+      <div>
+        <h1>Base de dados</h1>
+        <p class="muted" id="dados-subtitle">—</p>
+      </div>
+      <button class="btn danger small" id="btn-reset" type="button">Apagar tudo</button>
+    </div>
+
+    <div class="panel" id="dup-panel" hidden>
+      <h2>Possíveis duplicatas</h2>
+      <p class="muted small">Mesma data, valor, tipo e descrição — acontece quando o mesmo período vem de mais de um arquivo (ex: CSV e PDF do mesmo extrato).</p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Data</th><th>Descrição</th><th class="right">Valor</th><th class="right">Cópias</th><th></th></tr></thead>
+          <tbody id="dup-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Arquivos lidos da pasta</h2>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Arquivo</th><th>Tipo</th><th>Status</th><th>Quando</th><th class="right">Encontrados</th><th class="right">Importados</th><th class="right">Duplicados</th><th>Avisos</th></tr></thead>
+          <tbody id="files-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
         <h2>Transações</h2>
-        <div class="view-actions">
-          <button class="btn secondary" id="btn-import-csv">Importar CSV</button>
-          <button class="btn secondary" id="btn-import-ofx">Importar OFX</button>
-          <button class="btn secondary" id="btn-export-tx-csv">Exportar CSV</button>
-          <button class="btn secondary" id="btn-add-transfer">+ Transferência</button>
-          <button class="btn primary" id="btn-add-tx">+ Nova transação</button>
-        </div>
-      </div>
-      <input type="file" id="file-csv" accept=".csv" hidden>
-      <input type="file" id="file-ofx" accept=".ofx,.qfx" hidden>
-
-      <div class="filter-bar">
-        <input type="text" id="tx-search" placeholder="Buscar por descrição...">
-        <input type="month" id="tx-filter-month" />
-        <select id="tx-filter-category"><option value="">Todas categorias</option></select>
-        <select id="tx-filter-account"><option value="">Todas contas</option></select>
-        <input type="number" id="tx-filter-min" placeholder="Valor mín." step="0.01">
-        <input type="number" id="tx-filter-max" placeholder="Valor máx." step="0.01">
-        <select id="tx-sort">
-          <option value="date-desc">Data (mais recente)</option>
-          <option value="date-asc">Data (mais antiga)</option>
-          <option value="amount-desc">Valor (maior)</option>
-          <option value="amount-asc">Valor (menor)</option>
-        </select>
-      </div>
-
-      <div class="view-actions" id="tx-bulk-actions" style="margin-bottom:10px" hidden>
-        <span id="tx-bulk-count" class="muted"></span>
-        <button class="btn danger small" id="btn-bulk-delete-tx">Excluir selecionados</button>
-      </div>
-
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr><th><input type="checkbox" id="tx-select-all"></th><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th class="right">Valor</th><th></th></tr>
-          </thead>
-          <tbody id="tx-table-body"></tbody>
-        </table>
-        <p class="empty-state" id="tx-empty" hidden>Nenhuma transação neste período. Adicione uma ou importe um extrato.</p>
-      </div>
-      <div class="pagination" id="tx-pagination"></div>
-    </section>
-
-    <!-- CONTAS -->
-    <section id="view-contas" class="view">
-      <div class="view-header">
-        <h2>Contas</h2>
-        <div class="view-actions">
-          <button class="btn secondary" id="btn-add-transfer-2">+ Transferência</button>
-          <button class="btn primary" id="btn-add-account">+ Nova conta</button>
-        </div>
-      </div>
-      <div class="cards-grid two-col" id="accounts-list"></div>
-      <p class="empty-state" id="accounts-empty" hidden>Nenhuma conta cadastrada. Crie contas para acompanhar saldo, fatura de cartão e transferências.</p>
-
-      <div class="card" style="margin-top:16px">
-        <h3>Saldo por conta</h3>
-        <canvas id="chart-accounts-2"></canvas>
-      </div>
-    </section>
-
-    <!-- INVESTIMENTOS -->
-    <section id="view-investimentos" class="view">
-      <div class="view-header">
-        <h2>Investimentos</h2>
-        <div class="view-actions">
-          <button class="btn primary" id="btn-add-inv">+ Novo investimento</button>
-        </div>
-      </div>
-
-      <div class="cards-grid two-col">
-        <div class="card">
-          <h3>Alocação atual x perfil (<span id="inv-risk-label">moderado</span>)</h3>
-          <canvas id="chart-inv-target"></canvas>
-        </div>
-        <div class="card">
-          <h3>Resumo</h3>
-          <div class="cards-grid" id="inv-summary-cards"></div>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr><th>Nome</th><th>Ticker</th><th>Classe</th><th>Liquidez</th><th class="right">Investido</th><th class="right">Valor atual</th><th class="right">Proventos</th><th class="right">Rentabilidade</th><th class="right">XIRR a.a.</th><th></th></tr>
-          </thead>
-          <tbody id="inv-table-body"></tbody>
-        </table>
-        <p class="empty-state" id="inv-empty" hidden>Nenhum investimento cadastrado ainda.</p>
-      </div>
-    </section>
-
-    <!-- DÍVIDAS -->
-    <section id="view-dividas" class="view">
-      <div class="view-header">
-        <h2>Empréstimos e financiamentos</h2>
-        <div class="view-actions">
-          <button class="btn primary" id="btn-add-loan">+ Novo empréstimo</button>
-        </div>
-      </div>
-      <div class="cards-grid" id="loans-summary-cards"></div>
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr><th>Nome</th><th class="right">Principal</th><th class="right">Taxa a.a.</th><th class="right">Parcela</th><th>Parcelas pagas</th><th class="right">Saldo devedor</th><th></th></tr>
-          </thead>
-          <tbody id="loans-table-body"></tbody>
-        </table>
-        <p class="empty-state" id="loans-empty" hidden>Nenhum empréstimo cadastrado.</p>
-      </div>
-    </section>
-
-    <!-- METAS -->
-    <section id="view-metas" class="view">
-      <div class="view-header">
-        <h2>Metas de economia</h2>
-        <div class="view-actions">
-          <button class="btn primary" id="btn-add-goal">+ Nova meta</button>
-        </div>
-      </div>
-      <div class="cards-grid two-col" id="goals-list"></div>
-      <p class="empty-state" id="goals-empty" hidden>Nenhuma meta cadastrada ainda. Crie uma meta para juntar dinheiro com um objetivo (ex: viagem, reserva, entrada de imóvel).</p>
-    </section>
-
-    <!-- ORÇAMENTO -->
-    <section id="view-orcamento" class="view">
-      <div class="view-header">
-        <h2>Orçamento por categoria</h2>
-        <div class="view-actions">
-          <input type="month" id="budget-filter-month" />
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr><th>Categoria</th><th class="right">Limite mensal</th><th class="right">Gasto no mês</th><th>Progresso</th><th>Rollover</th><th></th></tr>
-          </thead>
-          <tbody id="budget-table-body"></tbody>
-        </table>
-      </div>
-
-      <div class="card" style="margin-top:16px">
-        <div class="view-header" style="margin-bottom:6px">
-          <h3 style="margin:0">Histórico: orçado x realizado</h3>
-          <select id="budget-history-category"></select>
-        </div>
-        <canvas id="chart-budget-history"></canvas>
-      </div>
-
-      <div class="view-header" style="margin-top:24px">
-        <h2>Contas fixas</h2>
-        <div class="view-actions">
-          <button class="btn primary" id="btn-add-bill">+ Nova conta fixa</button>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr><th>Nome</th><th>Categoria</th><th class="right">Valor previsto</th><th>Dia de vencimento</th><th>Automática</th><th></th></tr>
-          </thead>
-          <tbody id="bills-table-body"></tbody>
-        </table>
-        <p class="empty-state" id="bills-empty" hidden>Nenhuma conta fixa cadastrada. Cadastre contas recorrentes (aluguel, internet, assinaturas) para receber lembretes de vencimento.</p>
-      </div>
-    </section>
-
-    <!-- OPORTUNIDADES -->
-    <section id="view-oportunidades" class="view">
-      <div class="view-header">
-        <h2>Oportunidades e alertas</h2>
-      </div>
-
-      <div class="card">
-        <h3>Independência financeira (FIRE)</h3>
-        <p class="muted">Baseado na sua despesa média mensal, patrimônio atual e sobra mensal (últimos 3 meses).</p>
-        <div class="view-actions" style="margin-bottom:14px">
-          <label>Taxa de retirada segura (% a.a.)
-            <input type="number" id="fire-withdrawal-rate" min="1" max="10" step="0.5" style="width:90px">
-          </label>
-          <label>Retorno esperado da carteira (% a.a.)
-            <input type="number" id="fire-expected-return" min="0" max="30" step="0.5" style="width:90px">
-          </label>
-        </div>
-        <div class="cards-grid" id="fire-summary-cards"></div>
-        <div class="progress-bar" style="margin-top:12px;height:14px">
-          <div class="progress-bar-fill" id="fire-progress-bar" style="width:0%"></div>
-        </div>
-      </div>
-
-      <div id="opportunities-full-list" class="opportunities-list"></div>
-    </section>
-
-    <!-- DADOS (log de importação) -->
-    <section id="view-dados" class="view">
-      <div class="view-header"><h2>Dados</h2></div>
-
-      <div class="card" id="dados-duplicates-card">
-        <h3>Possíveis duplicatas</h3>
-        <p class="muted">Transações com mesma data, valor, tipo e descrição — comum quando o mesmo período é importado de mais de uma fonte (ex: CSV e PDF do mesmo extrato). Mantém a mais completa (com conta vinculada) e permite excluir o resto.</p>
-        <div id="dados-duplicates-summary" class="muted"></div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th><th>Ocorrências</th><th></th></tr></thead>
-            <tbody id="dados-duplicates-table-body"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="view-header" style="margin-bottom:6px">
-          <h3 style="margin:0">Transações brutas</h3>
-          <div class="view-actions">
-            <input type="text" id="dados-raw-search" placeholder="Buscar por descrição...">
-          </div>
-        </div>
-        <p class="muted">Todas as transações, sem filtro de mês — pra conferir de olho se receita/despesa batem com o esperado.</p>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th>Tipo</th><th>Valor</th></tr></thead>
-            <tbody id="dados-raw-table-body"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="view-header" style="margin-bottom:6px">
-          <h3 style="margin:0">Log de importação</h3>
-          <div class="view-actions">
-            <button class="btn danger" id="btn-clear-import-log">Limpar histórico</button>
-          </div>
-        </div>
-        <p class="muted">Registro de cada arquivo lido pela pasta automática ou importado manualmente — pra conferir se a leitura funcionou direito.</p>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Arquivo</th><th>Tipo</th><th>Status</th><th>Quando</th><th>Encontrados</th><th>Importados</th><th>Duplicados</th><th>Avisos</th></tr></thead>
-            <tbody id="dados-import-table-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- ANÁLISE MENSAL -->
-    <section id="view-analise-mensal" class="view">
-      <div class="view-header"><h2>Análise mensal</h2></div>
-      <p class="muted">Receita x despesa mês a mês, últimos 24 meses. Compra/resgate de investimentos (categoria "Investimentos") não entra nessa conta — é dinheiro mudando de lugar, não gasto nem renda de verdade.</p>
-      <div class="cards-grid" id="analise-summary-cards"></div>
-      <div class="card">
-        <canvas id="chart-analise-mensal"></canvas>
-      </div>
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead><tr><th>Mês</th><th>Receita</th><th>Despesa</th><th>Saldo</th><th>Acumulado</th></tr></thead>
-          <tbody id="analise-monthly-table-body"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- RECORRENTES -->
-    <section id="view-recorrentes" class="view">
-      <div class="view-header"><h2>Custos recorrentes e economia</h2></div>
-      <p class="muted">Lançamentos que se repetem em pelo menos 3 dos últimos 12 meses, ranqueados pelo custo total anualizado. Compra/resgate de investimentos não entra aqui.</p>
-      <div class="card">
-        <h3>Maiores custos recorrentes</h3>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Descrição</th><th>Categoria</th><th>Ocorrências</th><th>Valor médio</th><th>Total anualizado</th></tr></thead>
-            <tbody id="recorrentes-table-body"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Potencial de economia</h3>
-        <div id="recorrentes-savings-list" class="opportunities-list"></div>
-      </div>
-      <div class="card">
-        <h3>Sugestões de categorização</h3>
-        <p class="muted">Lançamentos recorrentes hoje classificados como "Outros" — escolha uma categoria e aplique de uma vez a todas as ocorrências (cria uma regra automática também).</p>
-        <div id="recorrentes-suggestions-list" class="opportunities-list"></div>
-      </div>
-    </section>
-
-    <!-- CONFIGURAÇÕES -->
-    <section id="view-configuracoes" class="view">
-      <div class="view-header"><h2>Configurações</h2></div>
-
-      <div class="card">
-        <h3>Aparência</h3>
-        <label>Tema
-          <select id="cfg-theme">
-            <option value="system">Automático (sistema)</option>
-            <option value="light">Claro</option>
-            <option value="dark">Escuro</option>
+        <div class="filters">
+          <input type="search" id="tx-search" placeholder="Buscar descrição...">
+          <select id="tx-type-filter">
+            <option value="">Receitas e despesas</option>
+            <option value="income">Só receitas</option>
+            <option value="expense">Só despesas</option>
           </select>
-        </label>
-      </div>
-
-      <div class="card">
-        <h3>Bloqueio por PIN</h3>
-        <p class="muted">Protege a abertura do app neste navegador com um PIN. Os dados continuam sem criptografia no armazenamento local — isso é só uma trava de acesso simples, não uma defesa criptográfica forte.</p>
-        <div class="view-actions">
-          <input type="password" inputmode="numeric" pattern="[0-9]*" id="cfg-pin-new" placeholder="Novo PIN (4-6 dígitos)" style="width:200px">
-          <button class="btn secondary" id="btn-set-pin">Definir PIN</button>
-          <button class="btn danger" id="btn-remove-pin">Remover PIN</button>
+          <select id="tx-month-filter"><option value="">Todos os meses</option></select>
         </div>
       </div>
-
-      <div class="card">
-        <h3>Perfil de investidor</h3>
-        <p class="muted">Usado para comparar sua alocação atual com uma referência e sugerir ajustes.</p>
-        <select id="cfg-risk-profile">
-          <option value="conservador">Conservador</option>
-          <option value="moderado">Moderado</option>
-          <option value="arrojado">Arrojado</option>
-        </select>
+      <p class="muted small" id="tx-count">—</p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th>Origem</th><th class="right">Valor</th></tr></thead>
+          <tbody id="tx-table"></tbody>
+        </table>
       </div>
-
-      <div class="card">
-        <h3>Meta de reserva de emergência</h3>
-        <p class="muted">Quantos meses de despesas você quer manter em ativos de alta liquidez.</p>
-        <input type="number" id="cfg-emergency-months" min="1" max="24" step="1">
+      <div class="pager">
+        <button class="btn ghost small" id="tx-prev" type="button">‹ Anterior</button>
+        <span class="muted small" id="tx-page">—</span>
+        <button class="btn ghost small" id="tx-next" type="button">Próxima ›</button>
       </div>
-
-      <div class="card">
-        <h3>Categorias</h3>
-        <p class="muted">Edite as listas separadas por vírgula.</p>
-        <label>Categorias de despesa <textarea id="cfg-expense-categories" rows="2"></textarea></label>
-        <label>Categorias de receita <textarea id="cfg-income-categories" rows="2"></textarea></label>
-        <button class="btn secondary" id="btn-save-categories">Salvar categorias</button>
-      </div>
-
-      <div class="card">
-        <h3>Regras de categorização automática</h3>
-        <p class="muted">Quando a descrição de uma transação nova (manual ou importada) contiver a palavra-chave, a categoria é aplicada automaticamente.</p>
-        <div class="csv-mapping">
-          <label>Palavra-chave <input type="text" id="rule-keyword" placeholder="ex: uber, netflix, ifood"></label>
-          <label>Tipo
-            <select id="rule-type">
-              <option value="expense">Despesa</option>
-              <option value="income">Receita</option>
-            </select>
-          </label>
-          <label>Categoria <select id="rule-category"></select></label>
-          <label>&nbsp;<button class="btn secondary" id="btn-add-rule" type="button">+ Adicionar regra</button></label>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Palavra-chave</th><th>Tipo</th><th>Categoria</th><th></th></tr></thead>
-            <tbody id="rules-table-body"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Importação automática de extratos</h3>
-        <p class="muted">Escolha uma pasta do seu computador (ex: onde você salva os extratos baixados do banco). Toda vez que o app abrir — ou quando você clicar em "Verificar agora" — ele lê os arquivos novos dessa pasta e importa sozinho, sem precisar selecionar o arquivo manualmente: <code>.csv</code>, <code>.ofx</code>/<code>.qfx</code>, <code>.xlsx</code>/<code>.xls</code>, <code>.pdf</code> (extrato bancário) e <code>.json</code> (backup exportado pelo próprio app — soma transações e investimentos ao que já existe, não substitui nada). Imagem (<code>.jpg</code>/<code>.png</code>) é reconhecida mas não processada. Só funciona em navegadores baseados em Chromium (Chrome, Edge, Brave); o navegador pode pedir a permissão de novo de tempos em tempos.</p>
-        <p id="auto-import-status" class="muted"></p>
-        <div class="view-actions">
-          <button class="btn secondary" id="btn-select-auto-folder">Selecionar pasta</button>
-          <button class="btn secondary" id="btn-rescan-auto-folder" hidden>Verificar agora</button>
-          <button class="btn danger" id="btn-forget-auto-folder" hidden>Esquecer pasta</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Dados</h3>
-        <p class="muted">Seus dados ficam apenas no seu navegador (localStorage). Faça backup regularmente. Não há sincronização entre dispositivos — use o backup para levar seus dados a outro navegador/aparelho.</p>
-        <div class="view-actions">
-          <button class="btn secondary" id="btn-export-json">Exportar backup (JSON)</button>
-          <button class="btn secondary" id="btn-import-json">Importar backup (JSON)</button>
-          <button class="btn danger" id="btn-reset-data">Apagar todos os dados</button>
-        </div>
-        <input type="file" id="file-json" accept=".json" hidden>
-      </div>
-    </section>
-
-  </main>
-  </div>
-</div>
-
-<!-- MODAL: transação -->
-<div class="modal-overlay" id="modal-tx" hidden>
-  <div class="modal">
-    <h3 id="modal-tx-title">Nova transação</h3>
-    <form id="form-tx">
-      <input type="hidden" id="tx-id">
-      <label>Tipo
-        <select id="tx-type">
-          <option value="expense">Despesa</option>
-          <option value="income">Receita</option>
-        </select>
-      </label>
-      <label>Data <input type="date" id="tx-date" required></label>
-      <label>Descrição <input type="text" id="tx-description" required></label>
-      <label id="tx-category-label">Categoria
-        <select id="tx-category"></select>
-      </label>
-      <label>Conta <select id="tx-account"><option value="">(não informar)</option></select></label>
-      <label>Valor total (R$) <input type="number" step="0.01" min="0" id="tx-amount" required></label>
-      <label id="tx-installments-label">Parcelas <input type="number" id="tx-installments" min="1" max="60" value="1"></label>
-      <label class="checkbox-label"><input type="checkbox" id="tx-split-toggle"> Dividir em mais de uma categoria</label>
-      <div id="tx-splits" hidden>
-        <div id="tx-splits-rows"></div>
-        <button type="button" class="btn secondary small" id="btn-add-split">+ Adicionar divisão</button>
-        <p class="muted" id="tx-splits-remainder"></p>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="btn secondary" id="btn-cancel-tx">Cancelar</button>
-        <button type="submit" class="btn primary">Salvar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- MODAL: transferência entre contas -->
-<div class="modal-overlay" id="modal-transfer" hidden>
-  <div class="modal">
-    <h3>Transferência entre contas</h3>
-    <form id="form-transfer">
-      <label>Data <input type="date" id="transfer-date" required></label>
-      <label>Descrição <input type="text" id="transfer-description" placeholder="ex: Pagamento de fatura"></label>
-      <label>Conta de origem <select id="transfer-from" required></select></label>
-      <label>Conta de destino <select id="transfer-to" required></select></label>
-      <label>Valor (R$) <input type="number" step="0.01" min="0.01" id="transfer-amount" required></label>
-      <div class="modal-actions">
-        <button type="button" class="btn secondary" id="btn-cancel-transfer">Cancelar</button>
-        <button type="submit" class="btn primary">Salvar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- MODAL: conta -->
-<div class="modal-overlay" id="modal-account" hidden>
-  <div class="modal">
-    <h3 id="modal-account-title">Nova conta</h3>
-    <form id="form-account">
-      <input type="hidden" id="account-id">
-      <label>Nome <input type="text" id="account-name" placeholder="ex: Nubank, Carteira" required></label>
-      <label>Tipo
-        <select id="account-type">
-          <option value="corrente">Conta corrente</option>
-          <option value="poupanca">Poupança</option>
-          <option value="carteira">Carteira (dinheiro)</option>
-          <option value="cartao_credito">Cartão de crédito</option>
-        </select>
-      </label>
-      <label id="account-balance-label">Saldo inicial (R$) <input type="number" step="0.01" id="account-balance" value="0"></label>
-      <label id="account-closing-label" hidden>Dia de fechamento da fatura <input type="number" id="account-closing" min="1" max="31"></label>
-      <label id="account-due-label" hidden>Dia de vencimento da fatura <input type="number" id="account-due" min="1" max="31"></label>
-      <div class="modal-actions">
-        <button type="button" class="btn secondary" id="btn-cancel-account">Cancelar</button>
-        <button type="submit" class="btn primary">Salvar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- MODAL: empréstimo -->
-<div class="modal-overlay" id="modal-loan" hidden>
-  <div class="modal">
-    <h3 id="modal-loan-title">Novo empréstimo</h3>
-    <form id="form-loan">
-      <input type="hidden" id="loan-id">
-      <label>Nome <input type="text" id="loan-name" placeholder="ex: Financiamento do carro" required></label>
-      <label>Valor principal (R$) <input type="number" step="0.01" min="0" id="loan-principal" required></label>
-      <label>Taxa de juros (% a.a.) <input type="number" step="0.01" min="0" id="loan-rate" required></label>
-      <label>Número de parcelas <input type="number" id="loan-installments" min="1" required></label>
-      <label>Parcelas já pagas <input type="number" id="loan-paid" min="0" value="0"></label>
-      <label>Data de início <input type="date" id="loan-start" required></label>
-      <div class="modal-actions">
-        <button type="button" class="btn secondary" id="btn-cancel-loan">Cancelar</button>
-        <button type="submit" class="btn primary">Salvar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- MODAL: investimento -->
-<div class="modal-overlay" id="modal-inv" hidden>
-  <div class="modal">
-    <h3 id="modal-inv-title">Novo investimento</h3>
-    <form id="form-inv">
-      <input type="hidden" id="inv-id">
-      <label>Nome <input type="text" id="inv-name" placeholder="ex: Tesouro Selic 2029" required></label>
-      <label>Ticker (opcional, para cotação automática) <input type="text" id="inv-ticker" placeholder="ações/FIIs: PETR4 · cripto: bitcoin (id CoinGecko)"></label>
-      <label>Quantidade (opcional, necessária para cotação automática) <input type="number" step="0.00000001" min="0" id="inv-quantity" placeholder="ex: 100"></label>
-      <label>Classe
-        <select id="inv-class">
-          <option value="renda_fixa">Renda Fixa</option>
-          <option value="acoes">Ações</option>
-          <option value="fiis">Fundos Imobiliários (FIIs)</option>
-          <option value="internacional">Internacional</option>
-          <option value="cripto">Cripto</option>
-          <option value="outros">Outros</option>
-        </select>
-      </label>
-      <label>Liquidez
-        <select id="inv-liquidity">
-          <option value="alta">Alta (resgate imediato/D+1)</option>
-          <option value="media">Média (dias a semanas)</option>
-          <option value="baixa">Baixa (meses/anos ou vencimento)</option>
-        </select>
-      </label>
-      <label id="inv-date-label">Data do aporte inicial <input type="date" id="inv-date" required></label>
-      <label id="inv-invested-label">Valor do aporte inicial (R$) <input type="number" step="0.01" min="0" id="inv-invested" required></label>
-      <label>Valor atual (R$) <input type="number" step="0.01" min="0" id="inv-current" required></label>
-      <div class="modal-actions">
-        <button type="button" class="btn secondary" id="btn-cancel-inv">Cancelar</button>
-        <button type="submit" class="btn primary">Salvar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- MODAL: novo aporte em investimento existente -->
-<div class="modal-overlay" id="modal-contribution" hidden>
-  <div class="modal">
-    <h3>Novo aporte</h3>
-    <form id="form-contribution">
-      <input type="hidden" id="contrib-inv-id">
-      <label>Data <input type="date" id="contrib-date" required></label>
-      <label>Valor aportado (R$) <input type="number" step="0.01" min="0" id="contrib-amount" required></label>
-      <div class="modal-actions">
-        <button type="button" class="btn secondary" id="btn-cancel-contrib">Cancelar</button>
-        <button type="submit" class="btn primary">Salvar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- MODAL: provento/dividendo -->
-<div class="modal-overlay" id="modal-dividend" hidden>
-  <div class="modal">
-    <h3>Registrar provento</h3>
-    <form id="form-dividend">
-      <input type="hidden" id="dividend-inv-id">
-      <label>Data <input type="date" id="dividend-date" required></label>
-      <label>Valor recebido (R$) <input type="number" step="0.01" min="0" id="dividend-amount" required></label>
-      <label>Descrição (opcional) <input type="text" id="dividend-description" placeholder="ex: Dividendos, JCP, aluguel de FII"></label>
-      <div class="modal-actions">
-        <button type="button" class="btn secondary" id="btn-cancel-dividend">Cancelar</button>
-        <button type="submit" class="btn primary">Salvar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- MODAL: meta de economia -->
-<div class="modal-overlay" id="modal-goal" hidden>
-  <div class="modal">
-    <h3 id="modal-goal-title">Nova meta</h3>
-    <form id="form-goal">
-      <input type="hidden" id="goal-id">
-      <label>Nome <input type="text" id="goal-name" placeholder="ex: Viagem, Reserva, Entrada do apê" required></label>
-      <label>Valor alvo (R$) <input type="number" step="0.01" min="0" id="goal-target" required></label>
-      <label>Data alvo (opcional) <input type="date" id="goal-date"></label>
-      <label>Valor já guardado (R$) <input type="number" step="0.01" min="0" id="goal-saved" required></label>
-      <div class="modal-actions">
-        <button type="button" class="btn secondary" id="btn-cancel-goal">Cancelar</button>
-        <button type="submit" class="btn primary">Salvar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- MODAL: conta fixa -->
-<div class="modal-overlay" id="modal-bill" hidden>
-  <div class="modal">
-    <h3 id="modal-bill-title">Nova conta fixa</h3>
-    <form id="form-bill">
-      <input type="hidden" id="bill-id">
-      <label>Nome <input type="text" id="bill-name" placeholder="ex: Aluguel, Internet, Academia" required></label>
-      <label>Categoria <select id="bill-category"></select></label>
-      <label>Valor previsto (R$) <input type="number" step="0.01" min="0" id="bill-amount" required></label>
-      <label>Dia de vencimento (1-31) <input type="number" id="bill-due-day" min="1" max="31" required></label>
-      <label>Conta para lançamento automático <select id="bill-account"><option value="">(não informar)</option></select></label>
-      <label class="checkbox-label"><input type="checkbox" id="bill-auto-generate"> Gerar transação automaticamente todo mês</label>
-      <div class="modal-actions">
-        <button type="button" class="btn secondary" id="btn-cancel-bill">Cancelar</button>
-        <button type="submit" class="btn primary">Salvar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- MODAL: importar CSV (mapeamento de colunas) -->
-<div class="modal-overlay" id="modal-csv" hidden>
-  <div class="modal wide">
-    <h3>Importar CSV</h3>
-    <p class="muted">Selecione qual coluna do seu arquivo corresponde a cada campo.</p>
-    <div class="csv-mapping" id="csv-mapping"></div>
-    <label>Importar para a conta <select id="csv-account"><option value="">(usar coluna "Conta" do arquivo, se houver)</option></select></label>
-    <div class="table-wrap">
-      <table class="data-table" id="csv-preview-table"></table>
     </div>
-    <div class="modal-actions">
-      <button type="button" class="btn secondary" id="btn-cancel-csv">Cancelar</button>
-      <button type="button" class="btn primary" id="btn-confirm-csv">Importar</button>
-    </div>
-  </div>
-</div>
+  </section>
 
-<div id="toast" class="toast" hidden>
-  <span id="toast-msg"></span>
-  <button id="toast-undo" class="btn secondary small" hidden>Desfazer</button>
-</div>
+  <!-- empty state (sem pasta / sem dados) -->
+  <div class="empty-screen" id="empty-screen" hidden>
+    <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    <h2>Escolha a pasta dos seus extratos</h2>
+    <p class="muted" id="empty-text">O app lê sozinho os arquivos dessa pasta toda vez que abrir — CSV, OFX, Excel, PDF do banco e backup JSON. Nada sai do seu navegador.</p>
+    <button class="btn primary" id="btn-folder-empty" type="button">Escolher pasta</button>
+    <p class="muted small" id="empty-support"></p>
+  </div>
+
+</main>
+
+<div class="toast" id="toast" hidden><span id="toast-msg"></span></div>
 
 <script src="js/vendor/chart.umd.js"></script>
 <script src="js/vendor/xlsx.full.min.js"></script>

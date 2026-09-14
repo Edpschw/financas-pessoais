@@ -12,8 +12,7 @@ import { parseOFX } from "./ofx-import.js";
 import { parseWorkbook } from "./excel-import.js";
 import { parseStatementPdf } from "./pdf-import.js";
 import { parseBackupJsonText } from "./json-import.js";
-import { applyCategoryRules } from "./categorize.js";
-import { isInvestmentMovement, INVESTMENT_CATEGORY } from "./investment-flow.js";
+import { tagInvestmentMovements } from "./investment-flow.js";
 import { isDuplicateTransaction, isImportedPlaceholderAccount } from "./utils.js";
 import { Store } from "./storage.js";
 
@@ -102,16 +101,6 @@ async function collectImportableFiles(dirHandle) {
   return files;
 }
 
-function withAutoCategory(txs) {
-  const { categoryRules } = Store.get();
-  return txs.map((tx) => {
-    const suggested = applyCategoryRules(tx.description, tx.type, categoryRules);
-    if (suggested) return { ...tx, category: suggested };
-    if (isInvestmentMovement(tx.description)) return { ...tx, category: INVESTMENT_CATEGORY };
-    return tx;
-  });
-}
-
 function withResolvedAccount(txs) {
   return txs.map((tx) => ({
     ...tx,
@@ -142,7 +131,7 @@ async function parseFile(file, ext) {
     return { transactions: parseOFX(await file.text()), warnings: [] };
   }
   if (ext === ".xlsx" || ext === ".xls") {
-    return { transactions: parseWorkbook(await file.arrayBuffer()), warnings: [] };
+    return { transactions: parseWorkbook(await file.arrayBuffer(), { fileName: file.name }), warnings: [] };
   }
   if (ext === ".pdf") {
     return parseStatementPdf(await file.arrayBuffer());
@@ -155,13 +144,15 @@ async function parseFile(file, ext) {
 }
 
 // Varre a pasta escolhida, ignora arquivos já processados (pelo ledger em
-// Store.importedFiles) e importa o resto com o mesmo pipeline do botão manual
-// (categorização automática + dedupe contra o que já existe). Cada arquivo processado
-// (inclusive os "não suportados") vira uma entrada no ledger, pra aparecer na aba Dados.
+// Store.importedFiles) e lê o resto: resolve a conta, marca movimentação de
+// investimento e descarta duplicatas contra o que já existe. Cada arquivo processado
+// (inclusive os não suportados) vira uma entrada no ledger, que aparece na aba
+// "Base de dados".
 export async function scanAndImport(dirHandle) {
   const summary = {
     filesScanned: 0, filesImported: 0, filesUnsupported: 0,
-    transactionsImported: 0, investmentsImported: 0, duplicatesSkipped: 0, warningsCount: 0, errors: [],
+    transactionsImported: 0, investmentsImported: 0, investmentsUpdated: 0,
+    duplicatesSkipped: 0, warningsCount: 0, errors: [],
   };
   const fileHandles = await collectImportableFiles(dirHandle);
   summary.filesScanned = fileHandles.length;
@@ -190,20 +181,25 @@ export async function scanAndImport(dirHandle) {
 
     try {
       const { transactions: rawTxs, investments, warnings } = await parseFile(file, ext);
-      const { toImport, duplicates } = dedupeAgainstExisting(withAutoCategory(withResolvedAccount(rawTxs)));
+      const prepared = tagInvestmentMovements(withResolvedAccount(rawTxs))
+        .map((tx) => ({ ...tx, source: file.name }));
+      const { toImport, duplicates } = dedupeAgainstExisting(prepared);
       if (toImport.length > 0) Store.addTransactions(toImport);
-      const investmentsAdded = investments && investments.length > 0 ? Store.mergeInvestments(investments) : 0;
+      const invResult = investments && investments.length > 0
+        ? Store.mergeInvestments(investments)
+        : { added: 0, updated: 0 };
 
       Store.markFileImported(key, {
         name: file.name, type: ext ? ext.slice(1) : "?", status: warnings.length > 0 ? "partial" : "ok",
         recordsFound: rawTxs.length + (investments ? investments.length : 0),
-        recordsImported: toImport.length + investmentsAdded,
+        recordsImported: toImport.length + invResult.added,
         duplicatesSkipped: duplicates, warnings,
       });
 
       summary.filesImported += 1;
       summary.transactionsImported += toImport.length;
-      summary.investmentsImported += investmentsAdded;
+      summary.investmentsImported += invResult.added;
+      summary.investmentsUpdated += invResult.updated;
       summary.duplicatesSkipped += duplicates;
       summary.warningsCount += warnings.length;
     } catch (err) {

@@ -1,51 +1,28 @@
+// Persistência local (localStorage). O app é um visualizador da pasta de extratos:
+// o estado aqui é um cache do que já foi lido dos arquivos, mais o ledger de quais
+// arquivos já foram processados — nada é digitado à mão.
 const STORAGE_KEY = "financas-pessoais:v1";
-
-const DEFAULT_EXPENSE_CATEGORIES = [
-  "Moradia", "Alimentação", "Transporte", "Saúde", "Educação",
-  "Lazer", "Compras", "Assinaturas", "Impostos", "Investimentos", "Outros"
-];
-
-// "Investimentos" nas duas listas: compra de ativo sai da conta corrente (lado
-// despesa), resgate/venda volta pra conta (lado receita) — nenhum dos dois é gasto ou
-// renda "de verdade", é dinheiro só mudando de lugar. Por isso essa categoria é
-// excluída das somas de receita/despesa no Dashboard, Análise Mensal e Recorrentes
-// (ver js/investment-flow.js e as chamadas de isAnalyzableTransaction em app.js).
-const DEFAULT_INCOME_CATEGORIES = ["Salário", "Freelance", "Rendimentos", "Investimentos", "Outros"];
-
-const ACCOUNT_TYPES = ["corrente", "poupanca", "carteira", "cartao_credito"];
 
 function defaultState() {
   return {
     transactions: [],
     accounts: [],
     investments: [],
-    loans: [],
-    budgets: [],
-    goals: [],
-    bills: [],
-    categoryRules: [],
-    netWorthHistory: [],
     importedFiles: [],
-    settings: {
-      riskProfile: "moderado",
-      emergencyMonths: 6,
-      expenseCategories: DEFAULT_EXPENSE_CATEGORIES.slice(),
-      incomeCategories: DEFAULT_INCOME_CATEGORIES.slice(),
-      fireWithdrawalRate: 4,
-      fireExpectedReturn: 6,
-      theme: "system",
-      pinHash: null,
-    },
+    settings: { theme: "system" },
   };
 }
 
-// Investimentos antigos guardavam um único par {invested, date}. A partir da versão
-// com XIRR, cada investimento tem uma lista de aportes (contributions), o que permite
-// calcular rentabilidade anualizada real (Portfolio Performance / Paisa usam a mesma ideia).
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// Investimentos antigos guardavam um único par {invested, date}; a forma atual é uma
+// lista de aportes. Também garante a lista de proventos.
 function migrateInvestment(inv) {
   let out = inv;
   if (!Array.isArray(inv.contributions) || inv.contributions.length === 0) {
-    const amount = typeof inv.invested === "number" ? inv.invested : 0;
+    const amount = typeof inv.invested === "number" ? inv.invested : inv.currentValue || 0;
     const date = inv.date || new Date().toISOString().slice(0, 10);
     out = { ...out, contributions: [{ date, amount }] };
   }
@@ -53,52 +30,42 @@ function migrateInvestment(inv) {
   return out;
 }
 
-function genId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
-// Versões antigas guardavam a conta como texto livre (campo `account`). Ao detectar
-// uma versão sem a lista `accounts`, criamos uma conta por nome distinto encontrado
-// nas transações, preservando o texto original como fallback de exibição.
+// Versões antigas guardavam a conta como texto livre (campo `account`). Sem a lista
+// `accounts`, criamos uma conta por nome distinto encontrado nas transações.
 function migrateAccounts(parsed, transactions) {
-  if (Array.isArray(parsed.accounts)) {
+  if (Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
     return { accounts: parsed.accounts, transactions };
   }
   const accounts = [];
   const byName = new Map();
-  const migratedTx = transactions.map((t) => {
+  const migrated = transactions.map((t) => {
     if (t.accountId) return t;
     const name = (t.account || "").trim();
     if (!name) return t;
     const key = name.toLowerCase();
     let acc = byName.get(key);
     if (!acc) {
-      acc = { id: genId(), name, type: "corrente", initialBalance: 0 };
+      acc = { id: genId(), name };
       byName.set(key, acc);
       accounts.push(acc);
     }
     return { ...t, accountId: acc.id };
   });
-  return { accounts, transactions: migratedTx };
+  return { accounts, transactions: migrated };
 }
 
-// Normaliza um objeto de estado bruto (do localStorage ou de um backup JSON importado),
-// aplicando as mesmas migrações (conta em texto livre -> accounts[], investimento sem
-// contributions, etc.) nos dois casos.
+// Normaliza qualquer estado bruto (localStorage de uma versão anterior, que podia ter
+// empréstimos/metas/orçamentos) para a forma atual, descartando o que não existe mais.
 function normalizeState(parsed) {
   const base = defaultState();
-  const rawTransactions = (parsed.transactions || base.transactions).map((t) => ({ type: "expense", ...t }));
+  const rawTransactions = (parsed.transactions || base.transactions)
+    .filter((t) => t && (t.type === "expense" || t.type === "income"))
+    .map((t) => ({ category: "Outros", ...t }));
   const { accounts, transactions } = migrateAccounts(parsed, rawTransactions);
   return {
     transactions,
     accounts,
     investments: (parsed.investments || base.investments).map(migrateInvestment),
-    loans: parsed.loans || base.loans,
-    budgets: parsed.budgets || base.budgets,
-    goals: parsed.goals || base.goals,
-    bills: parsed.bills || base.bills,
-    categoryRules: parsed.categoryRules || base.categoryRules,
-    netWorthHistory: parsed.netWorthHistory || base.netWorthHistory,
     importedFiles: parsed.importedFiles || base.importedFiles,
     settings: { ...base.settings, ...(parsed.settings || {}) },
   };
@@ -110,63 +77,26 @@ function load() {
     if (!raw) return defaultState();
     return normalizeState(JSON.parse(raw));
   } catch (err) {
-    console.error("Falha ao carregar dados, usando estado padrão.", err);
+    console.error("Falha ao carregar dados salvos, começando vazio.", err);
     return defaultState();
   }
 }
 
 let state = load();
-const listeners = new Set();
-
-function currentMonthKey() {
-  return new Date().toISOString().slice(0, 7);
-}
-
-function snapshotNetWorth() {
-  const investedNetWorth = state.investments.reduce((s, i) => s + (i.currentValue || 0), 0);
-  const month = currentMonthKey();
-  const i = state.netWorthHistory.findIndex((h) => h.month === month);
-  if (i >= 0) state.netWorthHistory[i].netWorth = investedNetWorth;
-  else state.netWorthHistory.push({ month, netWorth: investedNetWorth });
-}
 
 function save() {
-  snapshotNetWorth();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  listeners.forEach((fn) => fn(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (err) {
+    console.error("Falha ao salvar no localStorage.", err);
+  }
 }
-
-function onChange(fn) {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
-
-export function investedTotal(inv) {
-  return (inv.contributions || []).reduce((s, c) => s + c.amount, 0);
-}
-
-export function proceedsTotal(inv) {
-  return (inv.proceeds || []).reduce((s, p) => s + p.amount, 0);
-}
-
-export { ACCOUNT_TYPES };
 
 export const Store = {
   get() { return state; },
-  onChange,
 
-  addTransaction(tx) {
-    const id = genId();
-    state.transactions.push({ id, ...tx });
-    save();
-    return id;
-  },
-  updateTransaction(id, patch) {
-    const i = state.transactions.findIndex((t) => t.id === id);
-    if (i >= 0) { state.transactions[i] = { ...state.transactions[i], ...patch }; save(); }
-  },
-  removeTransaction(id) {
-    state.transactions = state.transactions.filter((t) => t.id !== id);
+  addTransactions(list) {
+    list.forEach((tx) => state.transactions.push({ id: genId(), ...tx }));
     save();
   },
   removeTransactions(ids) {
@@ -174,49 +104,9 @@ export const Store = {
     state.transactions = state.transactions.filter((t) => !set.has(t.id));
     save();
   },
-  addTransactions(list) {
-    list.forEach((tx) => state.transactions.push({ id: genId(), ...tx }));
-    save();
-  },
 
-  // Transferência entre contas: uma única transação com accountId (origem) e
-  // toAccountId (destino), não entra nas somas de receita/despesa do dashboard.
-  addTransfer({ date, description, fromAccountId, toAccountId, amount }) {
-    state.transactions.push({
-      id: genId(), type: "transfer", date, description: description || "Transferência",
-      category: "Transferência", accountId: fromAccountId, toAccountId, amount,
-    });
-    save();
-  },
-
-  // Parcelamento: divide o valor total em N transações mensais ligadas por installmentGroup.
-  addInstallmentTransactions(base, installments) {
-    const total = Math.round(base.amount * 100);
-    const per = Math.floor(total / installments);
-    const remainder = total - per * installments;
-    const group = genId();
-    const [y, m, d] = base.date.split("-").map(Number);
-    for (let i = 0; i < installments; i++) {
-      const dt = new Date(y, m - 1 + i, d);
-      const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-      const cents = per + (i === installments - 1 ? remainder : 0);
-      state.transactions.push({
-        id: genId(), ...base, date: dateStr, amount: cents / 100,
-        installmentGroup: group, installmentIndex: i + 1, installmentTotal: installments,
-      });
-    }
-    save();
-  },
-
-  addAccount(acc) {
-    const id = genId();
-    state.accounts.push({ id, initialBalance: 0, ...acc });
-    save();
-    return id;
-  },
-  // Usado pela importação (manual ou automática) quando o extrato traz um nome de
-  // conta em texto: reaproveita uma conta existente com o mesmo nome (sem diferenciar
-  // maiúsculas/acentos) ou cria uma nova do tipo "corrente".
+  // Chamado pelos importadores quando o arquivo traz um nome de conta em texto:
+  // reaproveita a conta existente com o mesmo nome ou cria uma nova.
   findOrCreateAccount(name) {
     const clean = (name || "").trim();
     if (!clean) return "";
@@ -224,140 +114,47 @@ export const Store = {
     const existing = state.accounts.find((a) => a.name.trim().toLowerCase() === key);
     if (existing) return existing.id;
     const id = genId();
-    state.accounts.push({ id, name: clean, type: "corrente", initialBalance: 0 });
+    state.accounts.push({ id, name: clean });
     save();
     return id;
   },
-  updateAccount(id, patch) {
-    const i = state.accounts.findIndex((a) => a.id === id);
-    if (i >= 0) { state.accounts[i] = { ...state.accounts[i], ...patch }; save(); }
-  },
-  removeAccount(id) {
-    state.accounts = state.accounts.filter((a) => a.id !== id);
-    save();
+  accountName(accountId) {
+    const acc = state.accounts.find((a) => a.id === accountId);
+    return acc ? acc.name : "";
   },
 
-  addLoan(loan) {
-    const id = genId();
-    state.loans.push({ id, paidInstallments: 0, ...loan });
-    save();
-    return id;
-  },
-  updateLoan(id, patch) {
-    const i = state.loans.findIndex((l) => l.id === id);
-    if (i >= 0) { state.loans[i] = { ...state.loans[i], ...patch }; save(); }
-  },
-  removeLoan(id) {
-    state.loans = state.loans.filter((l) => l.id !== id);
-    save();
-  },
-  registerLoanPayment(id) {
-    const loan = state.loans.find((l) => l.id === id);
-    if (!loan) return;
-    loan.paidInstallments = Math.min(loan.installmentsTotal, (loan.paidInstallments || 0) + 1);
-    save();
-  },
-
-  addInvestment(inv) {
-    state.investments.push({ id: genId(), proceeds: [], ...inv });
-    save();
-  },
-  // Usado pela importação automática de pasta ao ler um backup JSON: soma
-  // investimentos novos (casando por nome, sem diferenciar maiúsculas/acentos) sem
-  // apagar nem duplicar o que já existe — se um investimento com o mesmo nome já foi
-  // cadastrado (manualmente ou de uma leitura anterior), essa entrada é ignorada, e o
-  // valor "de verdade" continua sendo editado na aba Investimentos.
+  // Soma investimentos vindos de um backup JSON da pasta, casando por nome para não
+  // duplicar a mesma posição a cada nova leitura do mesmo arquivo. Uma posição que já
+  // existe tem o valor atualizado (o arquivo mais recente manda).
   mergeInvestments(list) {
     let added = 0;
+    let updated = 0;
     (list || []).forEach((inv) => {
       const name = (inv.name || "").trim();
       if (!name) return;
       const key = name.toLowerCase();
-      const exists = state.investments.some((i) => i.name.trim().toLowerCase() === key);
-      if (exists) return;
-      state.investments.push(migrateInvestment({ proceeds: [], ...inv, id: inv.id || genId(), name }));
+      const existing = state.investments.find((i) => i.name.trim().toLowerCase() === key);
+      if (existing) {
+        if (typeof inv.currentValue === "number" && inv.currentValue !== existing.currentValue) {
+          existing.currentValue = inv.currentValue;
+          updated++;
+        }
+        return;
+      }
+      state.investments.push(migrateInvestment({ ...inv, id: inv.id || genId(), name }));
       added++;
     });
-    if (added > 0) save();
-    return added;
-  },
-  updateInvestment(id, patch) {
-    const i = state.investments.findIndex((t) => t.id === id);
-    if (i >= 0) { state.investments[i] = { ...state.investments[i], ...patch }; save(); }
-  },
-  removeInvestment(id) {
-    state.investments = state.investments.filter((t) => t.id !== id);
-    save();
-  },
-  addContribution(investmentId, contribution) {
-    const inv = state.investments.find((i) => i.id === investmentId);
-    if (!inv) return;
-    inv.contributions = inv.contributions || [];
-    inv.contributions.push(contribution);
-    inv.contributions.sort((a, b) => a.date.localeCompare(b.date));
-    save();
-  },
-  addProceed(investmentId, proceed) {
-    const inv = state.investments.find((i) => i.id === investmentId);
-    if (!inv) return;
-    inv.proceeds = inv.proceeds || [];
-    inv.proceeds.push({ id: genId(), ...proceed });
-    save();
-  },
-  removeProceed(investmentId, proceedId) {
-    const inv = state.investments.find((i) => i.id === investmentId);
-    if (!inv) return;
-    inv.proceeds = (inv.proceeds || []).filter((p) => p.id !== proceedId);
-    save();
+    if (added > 0 || updated > 0) save();
+    return { added, updated };
   },
 
-  setBudget(category, monthlyLimit, rollover) {
-    const i = state.budgets.findIndex((b) => b.category === category);
-    if (i >= 0) state.budgets[i] = { ...state.budgets[i], monthlyLimit, rollover: Boolean(rollover) };
-    else state.budgets.push({ category, monthlyLimit, rollover: Boolean(rollover) });
-    save();
+  // Ledger dos arquivos já processados, para não reimportar o mesmo extrato a cada
+  // varredura. A chave identifica o arquivo por nome+tamanho+data de modificação.
+  isFileImported(key) {
+    return state.importedFiles.some((f) => f.key === key);
   },
-  removeBudget(category) {
-    state.budgets = state.budgets.filter((b) => b.category !== category);
-    save();
-  },
-
-  addGoal(goal) {
-    state.goals.push({ id: genId(), savedAmount: 0, ...goal });
-    save();
-  },
-  updateGoal(id, patch) {
-    const i = state.goals.findIndex((g) => g.id === id);
-    if (i >= 0) { state.goals[i] = { ...state.goals[i], ...patch }; save(); }
-  },
-  removeGoal(id) {
-    state.goals = state.goals.filter((g) => g.id !== id);
-    save();
-  },
-
-  addBill(bill) {
-    state.bills.push({ id: genId(), active: true, autoGenerate: false, lastGeneratedMonth: null, ...bill });
-    save();
-  },
-  updateBill(id, patch) {
-    const i = state.bills.findIndex((b) => b.id === id);
-    if (i >= 0) { state.bills[i] = { ...state.bills[i], ...patch }; save(); }
-  },
-  removeBill(id) {
-    state.bills = state.bills.filter((b) => b.id !== id);
-    save();
-  },
-
-  addCategoryRule(rule) {
-    state.categoryRules.push({ id: genId(), ...rule });
-    save();
-  },
-  updateCategoryRule(id, patch) {
-    const i = state.categoryRules.findIndex((r) => r.id === id);
-    if (i >= 0) { state.categoryRules[i] = { ...state.categoryRules[i], ...patch }; save(); }
-  },
-  removeCategoryRule(id) {
-    state.categoryRules = state.categoryRules.filter((r) => r.id !== id);
+  markFileImported(key, meta = {}) {
+    state.importedFiles.push({ key, importedAt: new Date().toISOString(), ...meta });
     save();
   },
 
@@ -366,42 +163,8 @@ export const Store = {
     save();
   },
 
-  // Ledger de arquivos já processados pela importação automática de pasta, para não
-  // reimportar o mesmo extrato a cada verificação. A chave identifica um arquivo por
-  // nome+tamanho+data de modificação (não pelo conteúdo, por simplicidade).
-  isFileImported(key) {
-    return state.importedFiles.some((f) => f.key === key);
-  },
-  markFileImported(key, meta = {}) {
-    state.importedFiles.push({ key, importedAt: new Date().toISOString(), ...meta });
-    save();
-  },
-  forgetImportedFiles() {
-    state.importedFiles = [];
-    save();
-  },
-
-  // Chamado na inicialização: gera transações de contas fixas marcadas como
-  // recorrentes automáticas para os meses já decorridos, evitando duplicatas.
-  applyGeneratedTransactions(newTransactions, billUpdates) {
-    if (newTransactions.length === 0) return 0;
-    newTransactions.forEach((tx) => state.transactions.push({ id: genId(), ...tx }));
-    billUpdates.forEach(({ id, lastGeneratedMonth }) => {
-      const b = state.bills.find((x) => x.id === id);
-      if (b) b.lastGeneratedMonth = lastGeneratedMonth;
-    });
-    save();
-    return newTransactions.length;
-  },
-
-  replaceAll(newState) {
-    state = normalizeState(newState);
-    save();
-  },
   resetAll() {
     state = defaultState();
     save();
   },
 };
-
-export { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES };

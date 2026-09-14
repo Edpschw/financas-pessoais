@@ -1,124 +1,146 @@
+// Gráficos (Chart.js vendorizado em js/vendor/). As cores saem dos tokens CSS, então
+// os gráficos acompanham o tema claro/escuro sem duplicar a paleta aqui.
 const instances = {};
 
-export function renderChart(canvasId, config) {
+function token(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function baseOptions() {
+  const ink = token("--ink-muted");
+  const grid = token("--border");
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: "bottom",
+        labels: { color: ink, usePointStyle: true, boxWidth: 8, padding: 16, font: { family: "Public Sans", size: 12 } },
+      },
+    },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: ink, font: { family: "IBM Plex Mono", size: 10.5 } } },
+      y: { grid: { color: grid }, ticks: { color: ink, font: { family: "IBM Plex Mono", size: 10.5 } } },
+    },
+  };
+}
+
+function render(canvasId, config) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   if (typeof Chart === "undefined") {
-    console.warn("Chart.js não carregou (sem conexão com o CDN?) — gráficos ficarão indisponíveis.");
+    console.warn("Chart.js não carregou — gráficos ficarão indisponíveis.");
     return;
   }
   if (instances[canvasId]) instances[canvasId].destroy();
   instances[canvasId] = new Chart(canvas.getContext("2d"), config);
 }
 
-const PALETTE = ["#2f6fed", "#1b9e5a", "#c9871f", "#8a5fd1", "#d9433f", "#2fb0c0", "#7a8699"];
+// Um canvas dentro de uma aba escondida nasce com tamanho zero. Ao trocar de aba,
+// os gráficos daquela tela precisam ser remedidos — senão ficam invisíveis.
+export function resizeCharts() {
+  Object.values(instances).forEach((chart) => chart.resize());
+}
 
-export function cashflowChart(canvasId, months, monthLabels, incomeSeries, expenseSeries) {
-  renderChart(canvasId, {
+const brl = (v) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const brlShort = (v) => (Math.abs(v) >= 1000
+  ? "R$ " + (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 0 }) + "k"
+  : brl(v));
+
+export function cashflowChart(canvasId, labels, incomeSeries, expenseSeries) {
+  const opts = baseOptions();
+  render(canvasId, {
     type: "bar",
     data: {
-      labels: monthLabels,
+      labels,
       datasets: [
-        { label: "Receitas", data: incomeSeries, backgroundColor: "#1b9e5a" },
-        { label: "Despesas", data: expenseSeries, backgroundColor: "#d9433f" },
+        { label: "Receita", data: incomeSeries, backgroundColor: token("--positive"), borderRadius: 3, maxBarThickness: 26 },
+        { label: "Despesa", data: expenseSeries, backgroundColor: token("--negative"), borderRadius: 3, maxBarThickness: 26 },
       ],
     },
     options: {
-      responsive: true,
-      plugins: { legend: { position: "bottom" } },
-      scales: { y: { beginAtZero: true } },
+      ...opts,
+      plugins: {
+        ...opts.plugins,
+        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${brl(c.parsed.y)}` } },
+      },
+      scales: {
+        ...opts.scales,
+        y: { ...opts.scales.y, beginAtZero: true, ticks: { ...opts.scales.y.ticks, callback: brlShort } },
+      },
+    },
+  });
+}
+
+export function categoriesChart(canvasId, labels, values) {
+  const opts = baseOptions();
+  render(canvasId, {
+    type: "bar",
+    data: { labels, datasets: [{ data: values, backgroundColor: token("--accent"), borderRadius: 3, maxBarThickness: 18 }] },
+    options: {
+      ...opts,
+      indexAxis: "y",
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (c) => brl(c.parsed.x) } },
+      },
+      scales: {
+        x: { ...opts.scales.y, beginAtZero: true, ticks: { ...opts.scales.y.ticks, callback: brlShort } },
+        y: { ...opts.scales.x, ticks: { ...opts.scales.x.ticks, font: { family: "Public Sans", size: 12 } } },
+      },
     },
   });
 }
 
 export function allocationChart(canvasId, labels, values) {
-  renderChart(canvasId, {
+  const palette = [token("--accent"), token("--positive"), token("--negative"), token("--warning"), token("--ink-muted")];
+  const opts = baseOptions();
+  render(canvasId, {
     type: "doughnut",
-    data: { labels, datasets: [{ data: values, backgroundColor: PALETTE }] },
-    options: { responsive: true, plugins: { legend: { position: "bottom" } } },
-  });
-}
-
-export function categoriesChart(canvasId, labels, values) {
-  renderChart(canvasId, {
-    type: "bar",
-    data: { labels, datasets: [{ label: "Gasto", data: values, backgroundColor: "#2f6fed" }] },
-    options: {
-      indexAxis: "y",
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { x: { beginAtZero: true } },
-    },
-  });
-}
-
-export function netWorthChart(canvasId, labels, values) {
-  renderChart(canvasId, {
-    type: "line",
     data: {
       labels,
       datasets: [{
-        label: "Patrimônio investido",
         data: values,
-        borderColor: "#2f6fed",
-        backgroundColor: "rgba(47,111,237,0.12)",
-        tension: 0.25,
-        fill: true,
+        backgroundColor: labels.map((_, i) => palette[i % palette.length]),
+        borderColor: token("--surface"),
+        borderWidth: 2,
       }],
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true } },
+      maintainAspectRatio: false,
+      cutout: "60%",
+      plugins: {
+        legend: opts.plugins.legend,
+        tooltip: {
+          callbacks: {
+            label: (c) => {
+              const total = c.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = total > 0 ? ((c.parsed / total) * 100).toFixed(1) : "0.0";
+              return `${c.label}: ${brl(c.parsed)} (${pct}%)`;
+            },
+          },
+        },
+      },
     },
   });
 }
 
-export function budgetHistoryChart(canvasId, labels, budgetedSeries, actualSeries) {
-  renderChart(canvasId, {
+export function proceedsChart(canvasId, labels, values) {
+  const opts = baseOptions();
+  render(canvasId, {
     type: "bar",
-    data: {
-      labels,
-      datasets: [
-        { label: "Orçado", data: budgetedSeries, backgroundColor: "#c9d3de" },
-        { label: "Realizado", data: actualSeries, backgroundColor: "#2f6fed" },
-      ],
-    },
+    data: { labels, datasets: [{ label: "Proventos", data: values, backgroundColor: token("--positive"), borderRadius: 3, maxBarThickness: 22 }] },
     options: {
-      responsive: true,
-      plugins: { legend: { position: "bottom" } },
-      scales: { y: { beginAtZero: true } },
-    },
-  });
-}
-
-export function accountsBalanceChart(canvasId, labels, values) {
-  renderChart(canvasId, {
-    type: "bar",
-    data: { labels, datasets: [{ label: "Saldo", data: values, backgroundColor: values.map((v) => (v < 0 ? "#d9433f" : "#1b9e5a")) }] },
-    options: {
-      indexAxis: "y",
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: { x: { beginAtZero: true } },
-    },
-  });
-}
-
-export function targetVsActualChart(canvasId, labels, actual, target) {
-  renderChart(canvasId, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        { label: "Atual (%)", data: actual, backgroundColor: "#2f6fed" },
-        { label: "Referência do perfil (%)", data: target, backgroundColor: "#c9d3de" },
-      ],
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { position: "bottom" } },
-      scales: { y: { beginAtZero: true, max: 100 } },
+      ...opts,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (c) => brl(c.parsed.y) } },
+      },
+      scales: {
+        ...opts.scales,
+        y: { ...opts.scales.y, beginAtZero: true, ticks: { ...opts.scales.y.ticks, callback: brlShort } },
+      },
     },
   });
 }

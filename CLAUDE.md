@@ -1,54 +1,57 @@
 # Finanças Pessoais
 
-App de finanças pessoais 100% client-side (sem backend, sem build step). Controle de gastos/renda, contas e cartões, empréstimos, investimentos, orçamento, metas e um motor de sugestões ("Oportunidades"). Tudo persiste no `localStorage` do navegador.
+Visualizador de finanças pessoais 100% client-side. **O app não tem formulários**: ele lê uma pasta do computador (extratos em CSV/OFX/Excel/PDF e backup JSON) e mostra três telas. Toda vez que abre, relê a pasta e incorpora o que for novo. Nada sai do navegador.
 
 ## Stack
 
-- HTML + CSS + JavaScript puro, via ES Modules (`type="module"`).
-- Sem framework, sem bundler, sem transpiler.
-- PWA: `manifest.json` + `sw.js` (instalável, funciona offline após a 1ª visita).
-- Testes: test runner nativo do Node (`node --test`), só lógica pura (sem DOM).
+- HTML + CSS + JavaScript puro, ES Modules. Sem framework, bundler ou build step.
+- PWA: `manifest.json` + `sw.js` (funciona offline depois da 1ª visita).
+- Testes: runner nativo do Node (`node --test`), só lógica pura (sem DOM).
 
 ## Rodando
 
 ```bash
-python3 -m http.server 8000
+python3 dev-server.py 8000
 ```
-Precisa ser servido por HTTP — ES Modules não funcionam com `file://`.
+`dev-server.py` é `http.server` + `Cache-Control: no-store`. **Use ele, não o `http.server` direto**: sem esse cabeçalho o navegador aplica cache heurístico e continua servindo a versão antiga do app depois de uma alteração (sintoma: tela em branco ou erro de módulo que "não existe"). Precisa ser HTTP — ES Modules não funcionam com `file://`.
 
 ## Testes
 
 ```bash
 npm test
 ```
-Cobre: XIRR, parsing/dedupe de CSV/Excel/PDF, detecção de recorrência, amortização de empréstimos (Price), saldo de contas/fatura, geração de transações recorrentes.
+
+## As três telas
+
+1. **Receita e gastos** — médias por mês, receita × despesa (6/12/24 meses), gastos por categoria, maiores gastos agrupados por descrição, tabela mês a mês com acumulado.
+2. **Investimentos** — total, proventos recebidos (identificados nos extratos), alocação por classe e a carteira. As posições vêm de um backup JSON na pasta.
+3. **Base de dados** — o que foi lido: log por arquivo (encontrados/importados/duplicados/avisos), detector de duplicatas e a tabela bruta de lançamentos com busca e filtros.
 
 ## Estrutura
 
-- `index.html` — shell único da aplicação (todas as abas/telas).
-- `js/app.js` — bootstrap e orquestração geral.
-- `js/storage.js` — camada de persistência (`localStorage`).
-- `js/accounts.js` — contas, saldo, fatura de cartão de crédito.
-- `js/loans.js` — empréstimos/financiamentos, amortização Price.
-- `js/recurring.js` — contas fixas / geração automática de transações mensais.
-- `js/csv-import.js`, `js/ofx-import.js`, `js/excel-import.js`, `js/pdf-import.js` — importação de extratos. CSV/Excel compartilham `guessMapping`/`rowsToTransactions` (detectam colunas de tipo/categoria/conta automaticamente, além de data/descrição/valor); PDF usa um parser de linha próprio (`DD/MM/YYYY DESCRIÇÃO VALOR`, valor já assinado) tunado para o layout de extrato do Itaú — linhas que começam com data mas não batem o padrão completo viram avisos em vez de travar o arquivo. `parseBrazilianAmount`/`normalizeDateToISO` (em `csv-import.js`) são compartilhados por todos os formatos.
-- `js/auto-import.js` — importação automática a partir de uma pasta escolhida pelo usuário (File System Access API: `showDirectoryPicker`, só Chromium). Guarda o handle da pasta no IndexedDB; ledger de arquivos já processados (inclusive os manuais e os "não suportados") fica em `Store.importedFiles`. Reconhece `.csv/.ofx/.qfx/.xlsx/.xls/.pdf/.json`; imagem (`.jpg/.png/...`) é listada como "não suportado" — decisão deliberada de não fazer OCR (pesado, pouco confiável para foto de recibo).
-- `js/json-import.js` — leitura de um backup JSON (mesmo formato de Configurações → Exportar backup) pela pasta automática. **Aditivo**, não confundir com `Store.replaceAll` (botão manual "Importar backup", que substitui tudo): soma transações (pelo pipeline normal de dedupe) e investimentos (`Store.mergeInvestments`, casa por nome pra não duplicar a mesma posição a cada nova leitura do mesmo arquivo) ao que já existe.
-- `js/investment-flow.js` — detecta compra/resgate de ativos de investimento no extrato (`isInvestmentMovement`, palavras-chave tipo "compra td", "itaucor resgate" — deliberadamente NÃO inclui proventos/rendimentos recebidos, que são receita de verdade). Lançamentos assim são auto-categorizados como "Investimentos" (em vez de apagados) e ficam de fora das somas de receita/despesa no Dashboard, Análise Mensal e Recorrentes (`isAnalyzableTransaction`) — mas continuam visíveis/editáveis em Transações e na aba Dados. Motivo: comprar/resgatar um investimento é dinheiro mudando de lugar, não gasto nem renda; contar como despesa distorce a análise (ex: uma aplicação grande de uma vez parecendo um "custo recorrente").
-- Aba **Dados**: log de importação (auditoria de arquivos, de `Store.importedFiles`) + tabela bruta de todas as transações (sem filtro de mês, com busca) + detector de duplicatas (`findDuplicateGroups` em `utils.js`, mesmo critério de `isDuplicateTransaction` — data/valor/tipo/descrição — mas rodando sobre o que já está salvo, não só no momento da importação). Útil quando o mesmo período é importado de mais de uma fonte (ex: CSV e PDF do mesmo extrato).
-- `js/recurring-analysis.js` — detecção de lançamentos recorrentes (`detectRecurringGroups`, agrupa por descrição normalizada + tipo, exige recorrência em >= 3 meses distintos) e heurísticas de economia (`computeSavingsInsights`: assinaturas, tarifas, custo subindo, concentração vs renda). Alimenta a aba Recorrentes, inclusive a sugestão de categorização em lote (cria uma `categoryRule` + atualiza as transações do grupo de uma vez).
-- `js/categorize.js` — regras de categorização automática por palavra-chave.
-- `js/quotes.js` — cotação automática de investimentos (API pública de mercado).
-- `js/advisor.js` — motor de regras da aba "Oportunidades".
-- `js/charts.js` — gráficos (Chart.js vendorizado em `js/vendor/`, sem CDN).
-- `js/vendor/` — bibliotecas de terceiros vendorizadas (não editar à mão; baixar de novo via `npm pack <pacote>` se precisar atualizar): `chart.umd.js` (Chart.js), `xlsx.full.min.js` (SheetJS, carregado via `<script>` clássico, global `XLSX`), `pdf.min.mjs` + `pdf.worker.min.mjs` (pdf.js, importado como ES module dentro de `pdf-import.js`).
-- `js/utils.js` — helpers gerais.
-- `tests/*.test.mjs` — um arquivo de teste por módulo de lógica pura. Os parsers de Excel/PDF são testados na parte pura (conversão de linhas já extraídas), não a extração real da biblioteca — isso é verificado manualmente no navegador (bibliotecas vendorizadas dependem de `window`/dynamic import, não rodam no test runner do Node).
+- `index.html` — shell das três telas (sem modais: não há edição).
+- `js/app.js` — orquestração e render de tudo.
+- `js/storage.js` — cache do que foi lido, no `localStorage`; ledger dos arquivos já processados.
+- `js/auto-import.js` — varre a pasta (File System Access API: `showDirectoryPicker`, só Chromium), guarda o handle no IndexedDB, despacha para o parser certo e descarta duplicatas.
+- `js/csv-import.js` — parser de CSV + utilidades compartilhadas por todos os formatos (`guessMapping`, `rowsToTransactions`, `parseBrazilianAmount`, `normalizeDateToISO`). `parseBrazilianAmount` aceita 1.234,56 e 1,234.56 — planilha de banco mistura os dois.
+- `js/excel-import.js` — planilhas. Procura a linha de cabeçalho de verdade (exportação de banco tem um bloco de nome/agência/conta antes da tabela) e reconhece fatura de cartão, onde valor positivo é gasto (inverso do extrato).
+- `js/pdf-import.js` — extrato em PDF via pdf.js. Layout do Itaú: `DD/MM/YYYY DESCRIÇÃO VALOR`, pulando "SALDO DO DIA"; linha que começa com data mas não bate o padrão vira aviso em vez de travar o arquivo.
+- `js/ofx-import.js`, `js/json-import.js` — OFX e backup JSON (este é **aditivo**: soma transações e investimentos, não substitui nada).
+- `js/investment-flow.js` — separa movimentação de principal (compra/resgate) de provento recebido.
+- `js/charts.js` — gráficos; cores lidas dos tokens CSS, então seguem o tema.
+- `js/utils.js` — formatadores, datas, dedupe e as categorias que ficam fora do fluxo.
+- `js/vendor/` — bibliotecas vendorizadas (não editar; rebaixar via `npm pack`): Chart.js, SheetJS (`XLSX` global, carregado por `<script>`) e pdf.js (ES module, importado dentro de `pdf-import.js`).
 
-## Convenções e restrições do projeto
+## Decisões que não são óbvias no código
 
-- **Sem backend, sem telemetria, sem enviar dados a lugar nenhum** — isso é a promessa central do app. Não introduzir chamadas de rede além da cotação pública opcional de investimentos.
-- **Sem conta de usuário / sem sync entre dispositivos** — o backup é exportação/importação manual de JSON. Não implementar sincronização servidor-based.
-- O PIN de acesso é só uma trava local (hash comparado no login), não criptografia — os dados continuam em texto plano no `localStorage`. Não apresentar isso como segurança forte.
-- Fora de escopo deliberado (não implementar a menos que o usuário peça explicitamente e mude a decisão do projeto): Open Finance/integração bancária real, notificações push/e-mail, cálculo completo de IR (DARF/custo médio).
-- A importação automática de pasta (`js/auto-import.js`) não é um backend/watcher real — é a File System Access API do próprio navegador, rodando só quando o app está aberto (ao carregar a página, ou no clique de "Verificar agora"). Não existe polling em segundo plano nem processo externo; isso quebraria a promessa de "100% no navegador, sem servidor".
+- **Compra/resgate de investimento não é gasto nem renda** — é dinheiro mudando de lugar. Fica marcado na categoria "Investimentos" e fora das somas da tela 1 (`isCashFlow` em `utils.js`), mas continua visível na Base de dados.
+- **Itens de fatura de cartão também ficam fora das somas** (categoria "Fatura cartão"). O extrato já contabiliza a fatura como um pagamento único ("ITAU BLACK ..."); somar os itens junto contaria o mesmo gasto duas vezes. O detalhe existe para consulta na tela 3.
+- **Imagem (`.jpg`/`.png`) é reconhecida mas não processada** — OCR de foto de recibo é pesado e pouco confiável. Aparece como "não suportado" no log.
+- **A leitura da pasta não é um watcher**: é a File System Access API do próprio navegador, rodando quando o app abre ou no botão "Atualizar". Não existe processo em segundo plano — isso exigiria um servidor, que o projeto não tem.
+- **Nada é digitado à mão.** Se faltou um dado, a resposta é colocar o arquivo na pasta, não criar um formulário.
+
+## Restrições do projeto
+
+- Sem backend, sem telemetria, sem enviar dados para lugar nenhum.
+- Sem conta de usuário e sem sincronização entre dispositivos.
+- Fora de escopo deliberado: Open Finance/integração bancária, notificações push, cálculo de IR.
