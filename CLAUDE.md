@@ -24,7 +24,7 @@ npm test
 ## As três telas
 
 1. **Receita e gastos** — médias por mês, receita × despesa (6/12/24 meses), gastos por categoria, maiores gastos agrupados por descrição, tabela mês a mês com acumulado.
-2. **Investimentos** — total, proventos recebidos (identificados nos extratos), alocação por classe e a carteira. As posições vêm de um backup JSON na pasta.
+2. **Investimentos** — total, proventos recebidos (identificados nos extratos), alocação por classe e a carteira. As posições vêm do PDF de posição consolidada ou de um backup JSON na pasta.
 3. **Base de dados** — o que foi lido: log por arquivo (encontrados/importados/duplicados/avisos), detector de duplicatas e a tabela bruta de lançamentos com busca e filtros.
 
 ## Estrutura
@@ -35,7 +35,7 @@ npm test
 - `js/auto-import.js` — varre a pasta (File System Access API: `showDirectoryPicker`, só Chromium), guarda o handle no IndexedDB, despacha para o parser certo e descarta duplicatas.
 - `js/csv-import.js` — parser de CSV + utilidades compartilhadas por todos os formatos (`guessMapping`, `rowsToTransactions`, `parseBrazilianAmount`, `normalizeDateToISO`). `parseBrazilianAmount` aceita 1.234,56 e 1,234.56 — planilha de banco mistura os dois.
 - `js/excel-import.js` — planilhas. Procura a linha de cabeçalho de verdade (exportação de banco tem um bloco de nome/agência/conta antes da tabela) e reconhece fatura de cartão, onde valor positivo é gasto (inverso do extrato).
-- `js/pdf-import.js` — extrato em PDF via pdf.js. Layout do Itaú: `DD/MM/YYYY DESCRIÇÃO VALOR`, pulando "SALDO DO DIA"; linha que começa com data mas não bate o padrão vira aviso em vez de travar o arquivo.
+- `js/pdf-import.js` — PDF via pdf.js, com dois formatos: **extrato** (`DD/MM/YYYY DESCRIÇÃO VALOR`, pulando "SALDO DO DIA"; linha com data que não bate o padrão vira aviso) e **posição consolidada** (carteira). Na carteira, a tabela por produto não sobrevive à reconstrução de linhas — nome e colunas se misturam —, então é lido o quadro-resumo por tipo de investimento, que é bem formado, e a soma é conferida contra o total impresso no PDF (divergência vira aviso). A reconstrução de linhas só insere espaço quando há vão horizontal de verdade: esse PDF devolve um item por glifo, e juntar tudo com espaço quebrava até os números.
 - `js/ofx-import.js`, `js/json-import.js` — OFX e backup JSON (este é **aditivo**: soma transações e investimentos, não substitui nada).
 - `js/investment-flow.js` — separa movimentação de principal (compra/resgate) de provento recebido.
 - `js/charts.js` — gráficos; cores lidas dos tokens CSS, então seguem o tema.

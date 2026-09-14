@@ -46,6 +46,74 @@ export function parseStatementLines(lines, defaultAccount = "Importado (PDF)") {
   return { transactions, warnings };
 }
 
+// ============================================================
+// Posição consolidada (carteira de investimentos em PDF)
+// ============================================================
+// O Itaú também exporta a carteira em PDF ("Posição consolidada").
+//
+// Linha do quadro-resumo: "Tesouro Direto R$ 21.361,73 46,09% R$ 366.567,53"
+// (tipo, rendimento no ano, distribuição, valor investido).
+const SUMMARY_ROW_RE = /^(.+?)\s+R\$\s*(-?[\d.,]+)\s+(-?[\d.,]+)%\s+R\$\s*([\d.,]+)$/;
+const TOTAL_RE = /total\s+investido\s+R\$\s*([\d.,]+)/i;
+
+// O nome do tipo no resumo → classe usada pelo app.
+function classFromSummaryLabel(label) {
+  const n = label.toLowerCase();
+  if (/tesouro/.test(n)) return "renda_fixa";
+  if (/cdb|renda fixa|estruturad/.test(n)) return "renda_fixa";
+  if (/ação|acao|ações|acoes/.test(n)) return "acoes";
+  if (/imobiliár|imobiliar|fii/.test(n)) return "fiis";
+  if (/fundo/.test(n)) return "fundos";
+  if (/previdência|previdencia|poupança|poupanca/.test(n)) return "outros";
+  return "outros";
+}
+
+export function looksLikePortfolioStatement(lines) {
+  // tolerante a PDF que devolve um item por glifo ("P o s i ç ã o")
+  return lines.some((line) => /posi[çc][ãa]oconsolidada/i.test((line || "").replace(/\s+/g, "")));
+}
+
+// Lê a "Posição consolidada" do Itaú. A tabela de produtos individuais tem as colunas
+// intercaladas de um jeito que não sobrevive à reconstrução de linhas (nome e valores
+// se misturam), mas o quadro-resumo por tipo de investimento é uma linha bem formada e
+// fecha com o total informado — é dele que sai a carteira.
+export function parsePortfolioLines(lines) {
+  const investments = [];
+  const warnings = [];
+  let statedTotal = null;
+
+  for (const rawLine of lines) {
+    const line = (rawLine || "").trim();
+    if (!line) continue;
+
+    const total = line.match(TOTAL_RE);
+    if (total) { statedTotal = parseBrazilianAmount(total[1]); continue; }
+
+    const row = line.match(SUMMARY_ROW_RE);
+    if (!row) continue;
+
+    const [, label, , , rawValue] = row;
+    const name = label.replace(/\s{2,}/g, " ").trim();
+    const value = parseBrazilianAmount(rawValue);
+    if (!name || !Number.isFinite(value) || value <= 0) continue;
+    if (/total/i.test(name)) continue;
+
+    investments.push({ name, class: classFromSummaryLabel(name), currentValue: value });
+  }
+
+  const sum = investments.reduce((s, i) => s + i.currentValue, 0);
+  if (statedTotal !== null && investments.length > 0 && Math.abs(sum - statedTotal) > 0.05) {
+    warnings.push(
+      `A soma por tipo de investimento (${sum.toFixed(2)}) não bate com o total informado no PDF (${statedTotal.toFixed(2)}).`
+    );
+  }
+  if (statedTotal !== null && investments.length === 0) {
+    warnings.push("O PDF informa um total investido, mas nenhuma linha por tipo de investimento foi reconhecida.");
+  }
+
+  return { investments, warnings };
+}
+
 // Agrupa os "items" de texto posicionado do pdf.js (getTextContent) em linhas visuais,
 // por proximidade de coordenada Y, concatenando por ordem X — reconstrução de texto
 // padrão para PDFs sem estrutura de tabela real (o pdf.js só expõe glifos posicionados,
@@ -53,7 +121,13 @@ export function parseStatementLines(lines, defaultAccount = "Importado (PDF)") {
 function itemsToLines(items, yTolerance = 2) {
   const positioned = items
     .filter((it) => (it.str || "").trim() !== "")
-    .map((it) => ({ str: it.str, x: it.transform[4], y: it.transform[5] }))
+    .map((it) => ({
+      str: it.str,
+      x: it.transform[4],
+      y: it.transform[5],
+      width: it.width || 0,
+      height: it.height || 8,
+    }))
     .sort((a, b) => (b.y - a.y) || (a.x - b.x));
 
   const lines = [];
@@ -65,9 +139,21 @@ function itemsToLines(items, yTolerance = 2) {
     }
     current.parts.push(it);
   }
-  return lines.map((l) =>
-    l.parts.sort((a, b) => a.x - b.x).map((p) => p.str).join(" ").replace(/\s{2,}/g, " ").trim()
-  );
+
+  // Alguns PDFs (a posição consolidada do Itaú, por exemplo) devolvem um item por
+  // glifo. Juntar tudo com espaço quebraria palavras e até números ("1 1.986,35"),
+  // então o espaço só entra quando existe um vão horizontal de verdade entre os itens.
+  return lines.map((line) => {
+    const parts = line.parts.sort((a, b) => a.x - b.x);
+    let text = "";
+    let previousEnd = null;
+    for (const part of parts) {
+      if (previousEnd !== null && part.x - previousEnd > Math.max(1, part.height * 0.25)) text += " ";
+      text += part.str;
+      previousEnd = part.x + part.width;
+    }
+    return text.replace(/\s{2,}/g, " ").trim();
+  });
 }
 
 let pdfjsLibPromise = null;
@@ -94,7 +180,14 @@ export async function extractLines(arrayBuffer) {
   return allLines;
 }
 
-export async function parseStatementPdf(arrayBuffer, defaultAccount = "Importado (PDF)") {
+// Um PDF do banco pode ser um extrato (lançamentos) ou a posição consolidada da
+// carteira. Decide pelo conteúdo e devolve sempre a mesma forma.
+export async function parsePdf(arrayBuffer, defaultAccount = "Importado (PDF)") {
   const lines = await extractLines(arrayBuffer);
-  return parseStatementLines(lines, defaultAccount);
+  if (looksLikePortfolioStatement(lines)) {
+    const { investments, warnings } = parsePortfolioLines(lines);
+    return { transactions: [], investments, warnings };
+  }
+  const { transactions, warnings } = parseStatementLines(lines, defaultAccount);
+  return { transactions, investments: [], warnings };
 }

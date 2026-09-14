@@ -22,7 +22,7 @@ Precisa de um navegador baseado em Chromium (Chrome, Edge, Brave) — a API que 
 | Formato | O que é |
 |---|---|
 | `.csv` | Extrato exportado do banco. Detecta sozinho as colunas de data, descrição, valor, tipo, categoria e conta. |
-| `.pdf` | Extrato do banco (layout do Itaú validado). Linhas que não dá para interpretar viram aviso, sem travar o arquivo. |
+| `.pdf` | Extrato do banco **ou** a posição consolidada da carteira (layout do Itaú validado). Linhas que não dá para interpretar viram aviso, sem travar o arquivo. |
 | `.xlsx` / `.xls` | Planilha de extrato ou **fatura de cartão** (acha a tabela mesmo quando há um bloco com nome/agência/conta antes). |
 | `.ofx` / `.qfx` | Extrato no padrão OFX. |
 | `.json` | Backup exportado pelo próprio app — soma transações e investimentos ao que já existe. |
@@ -33,7 +33,7 @@ O mesmo lançamento vindo de dois arquivos (por exemplo o CSV e o PDF do mesmo m
 ## As três telas
 
 - **Receita e gastos** — quanto entra e quanto sai por mês, gastos por categoria, os maiores gastos do período e a tabela mês a mês.
-- **Investimentos** — carteira, alocação por classe e os proventos que caíram na conta.
+- **Investimentos** — carteira, alocação por classe e os proventos que caíram na conta. As posições vêm do PDF de posição consolidada ou de um backup JSON.
 - **Base de dados** — o que foi lido de cada arquivo, possíveis duplicatas e todos os lançamentos, com busca e filtros.
 
 ## Duas contas que o app não soma (de propósito)

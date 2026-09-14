@@ -10,7 +10,7 @@
 import { parseCSV, guessMapping, rowsToTransactions } from "./csv-import.js";
 import { parseOFX } from "./ofx-import.js";
 import { parseWorkbook } from "./excel-import.js";
-import { parseStatementPdf } from "./pdf-import.js";
+import { parsePdf } from "./pdf-import.js";
 import { parseBackupJsonText } from "./json-import.js";
 import { tagInvestmentMovements } from "./investment-flow.js";
 import { isDuplicateTransaction, isImportedPlaceholderAccount } from "./utils.js";
@@ -134,7 +134,7 @@ async function parseFile(file, ext) {
     return { transactions: parseWorkbook(await file.arrayBuffer(), { fileName: file.name }), warnings: [] };
   }
   if (ext === ".pdf") {
-    return parseStatementPdf(await file.arrayBuffer());
+    return parsePdf(await file.arrayBuffer());
   }
   if (ext === ".json") {
     const { transactions, investments } = parseBackupJsonText(await file.text());

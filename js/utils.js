@@ -62,6 +62,7 @@ export function lastNMonths(n, endMonth = todayMonthKey()) {
 export const CLASS_LABELS = {
   renda_fixa: "Renda fixa",
   acoes: "Ações",
+  fundos: "Fundos",
   fiis: "Fundos imobiliários",
   internacional: "Internacional",
   cripto: "Cripto",
