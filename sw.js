@@ -16,7 +16,16 @@ const APP_SHELL = [
   "./js/loans.js",
   "./js/recurring.js",
   "./js/quotes.js",
+  "./js/auto-import.js",
+  "./js/excel-import.js",
+  "./js/pdf-import.js",
+  "./js/json-import.js",
+  "./js/recurring-analysis.js",
+  "./js/investment-flow.js",
   "./js/vendor/chart.umd.js",
+  "./js/vendor/xlsx.full.min.js",
+  "./js/vendor/pdf.min.mjs",
+  "./js/vendor/pdf.worker.min.mjs",
 ];
 
 self.addEventListener("install", (event) => {

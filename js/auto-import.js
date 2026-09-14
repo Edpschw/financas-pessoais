@@ -9,14 +9,28 @@
 // que exige um gesto do usuário).
 import { parseCSV, guessMapping, rowsToTransactions } from "./csv-import.js";
 import { parseOFX } from "./ofx-import.js";
+import { parseWorkbook } from "./excel-import.js";
+import { parseStatementPdf } from "./pdf-import.js";
+import { parseBackupJsonText } from "./json-import.js";
 import { applyCategoryRules } from "./categorize.js";
+import { isInvestmentMovement, INVESTMENT_CATEGORY } from "./investment-flow.js";
 import { isDuplicateTransaction, isImportedPlaceholderAccount } from "./utils.js";
 import { Store } from "./storage.js";
 
 const DB_NAME = "financas-pessoais-fs";
 const OBJECT_STORE = "handles";
 const HANDLE_KEY = "auto-import-dir";
-const IMPORTABLE_EXT = [".csv", ".ofx", ".qfx"];
+// Formatos com parser de verdade. Imagem (recibo/comprovante fotografado) exigiria OCR
+// no navegador — biblioteca pesada e pouco confiável para esse tipo de foto — por isso
+// só é reconhecida pra aparecer como "não suportado" no log, sem tentar processar.
+const DATA_EXT = [".csv", ".ofx", ".qfx", ".xlsx", ".xls", ".pdf", ".json"];
+const IMAGE_EXT = [".jpg", ".jpeg", ".png", ".heic", ".heif"];
+const IMPORTABLE_EXT = [...DATA_EXT, ...IMAGE_EXT];
+
+function extOf(name) {
+  const lower = name.toLowerCase();
+  return IMPORTABLE_EXT.find((ext) => lower.endsWith(ext)) || null;
+}
 
 export function isSupported() {
   return typeof window !== "undefined" && "showDirectoryPicker" in window;
@@ -92,7 +106,9 @@ function withAutoCategory(txs) {
   const { categoryRules } = Store.get();
   return txs.map((tx) => {
     const suggested = applyCategoryRules(tx.description, tx.type, categoryRules);
-    return suggested ? { ...tx, category: suggested } : tx;
+    if (suggested) return { ...tx, category: suggested };
+    if (isInvestmentMovement(tx.description)) return { ...tx, category: INVESTMENT_CATEGORY };
+    return tx;
   });
 }
 
@@ -114,19 +130,39 @@ function dedupeAgainstExisting(candidates) {
   return { toImport, duplicates };
 }
 
-function parseFile(name, text) {
-  if (name.toLowerCase().endsWith(".csv")) {
-    const { headers, rows } = parseCSV(text);
-    return rowsToTransactions(rows, guessMapping(headers));
+// Devolve sempre {transactions, warnings}, e opcionalmente {investments} (só backup
+// JSON traz isso). csv/ofx/xlsx/json não geram avisos (formato estruturado), só o
+// parser de PDF (js/pdf-import.js) pode devolver linhas ambíguas.
+async function parseFile(file, ext) {
+  if (ext === ".csv") {
+    const { headers, rows } = parseCSV(await file.text());
+    return { transactions: rowsToTransactions(rows, guessMapping(headers)), warnings: [] };
   }
-  return parseOFX(text);
+  if (ext === ".ofx" || ext === ".qfx") {
+    return { transactions: parseOFX(await file.text()), warnings: [] };
+  }
+  if (ext === ".xlsx" || ext === ".xls") {
+    return { transactions: parseWorkbook(await file.arrayBuffer()), warnings: [] };
+  }
+  if (ext === ".pdf") {
+    return parseStatementPdf(await file.arrayBuffer());
+  }
+  if (ext === ".json") {
+    const { transactions, investments } = parseBackupJsonText(await file.text());
+    return { transactions, investments, warnings: [] };
+  }
+  return { transactions: [], warnings: [] };
 }
 
 // Varre a pasta escolhida, ignora arquivos já processados (pelo ledger em
 // Store.importedFiles) e importa o resto com o mesmo pipeline do botão manual
-// (categorização automática + dedupe contra o que já existe).
+// (categorização automática + dedupe contra o que já existe). Cada arquivo processado
+// (inclusive os "não suportados") vira uma entrada no ledger, pra aparecer na aba Dados.
 export async function scanAndImport(dirHandle) {
-  const summary = { filesScanned: 0, filesImported: 0, transactionsImported: 0, duplicatesSkipped: 0, errors: [] };
+  const summary = {
+    filesScanned: 0, filesImported: 0, filesUnsupported: 0,
+    transactionsImported: 0, investmentsImported: 0, duplicatesSkipped: 0, warningsCount: 0, errors: [],
+  };
   const fileHandles = await collectImportableFiles(dirHandle);
   summary.filesScanned = fileHandles.length;
 
@@ -141,17 +177,40 @@ export async function scanAndImport(dirHandle) {
     const key = fileKey(dirHandle, file);
     if (Store.isFileImported(key)) continue;
 
+    const ext = extOf(file.name);
+
+    if (IMAGE_EXT.includes(ext)) {
+      Store.markFileImported(key, {
+        name: file.name, type: ext.slice(1), status: "unsupported",
+        recordsFound: 0, recordsImported: 0, duplicatesSkipped: 0, warnings: [],
+      });
+      summary.filesUnsupported += 1;
+      continue;
+    }
+
     try {
-      const text = await file.text();
-      const rawTxs = parseFile(file.name, text);
+      const { transactions: rawTxs, investments, warnings } = await parseFile(file, ext);
       const { toImport, duplicates } = dedupeAgainstExisting(withAutoCategory(withResolvedAccount(rawTxs)));
       if (toImport.length > 0) Store.addTransactions(toImport);
-      Store.markFileImported(key, { name: file.name, transactionsImported: toImport.length });
+      const investmentsAdded = investments && investments.length > 0 ? Store.mergeInvestments(investments) : 0;
+
+      Store.markFileImported(key, {
+        name: file.name, type: ext ? ext.slice(1) : "?", status: warnings.length > 0 ? "partial" : "ok",
+        recordsFound: rawTxs.length + (investments ? investments.length : 0),
+        recordsImported: toImport.length + investmentsAdded,
+        duplicatesSkipped: duplicates, warnings,
+      });
 
       summary.filesImported += 1;
       summary.transactionsImported += toImport.length;
+      summary.investmentsImported += investmentsAdded;
       summary.duplicatesSkipped += duplicates;
+      summary.warningsCount += warnings.length;
     } catch (err) {
+      Store.markFileImported(key, {
+        name: file.name, type: ext ? ext.slice(1) : "?", status: "error",
+        recordsFound: 0, recordsImported: 0, duplicatesSkipped: 0, warnings: [err.message],
+      });
       summary.errors.push({ file: file.name, message: err.message });
     }
   }

@@ -67,7 +67,9 @@ function normalizeType(raw) {
   return null;
 }
 
-function parseBrazilianAmount(raw) {
+// Exportada para reaproveitar em outros formatos de importação (Excel, PDF) que também
+// trazem valores em formato brasileiro (1.234,56).
+export function parseBrazilianAmount(raw) {
   if (!raw) return NaN;
   let s = raw.replace(/[^\d,.-]/g, "");
   // se tem vírgula e ponto, assume ponto = milhar, vírgula = decimal (padrão BR)
@@ -79,6 +81,17 @@ function parseBrazilianAmount(raw) {
   return parseFloat(s);
 }
 
+// DD/MM/YYYY (ou YY) -> YYYY-MM-DD. Retorna a string original se não bater o padrão BR
+// (ex: já está em YYYY-MM-DD, formato usado por CSVs no padrão ISO).
+export function normalizeDateToISO(rawDate) {
+  const date = (rawDate || "").trim();
+  const brDate = date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (!brDate) return date;
+  let [, d, m, y] = brDate;
+  if (y.length === 2) y = "20" + y;
+  return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+}
+
 export function rowsToTransactions(rows, mapping, defaultCategory = "Outros", defaultAccount = "Importado (CSV)") {
   const out = [];
   for (const row of rows) {
@@ -88,14 +101,7 @@ export function rowsToTransactions(rows, mapping, defaultCategory = "Outros", de
     const amount = parseBrazilianAmount(rawAmount);
     if (!rawDate || Number.isNaN(amount) || amount === 0) continue;
 
-    let date = rawDate.trim();
-    // normaliza DD/MM/YYYY -> YYYY-MM-DD
-    const brDate = date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-    if (brDate) {
-      let [, d, m, y] = brDate;
-      if (y.length === 2) y = "20" + y;
-      date = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-    }
+    const date = normalizeDateToISO(rawDate);
 
     const rawType = mapping.type >= 0 ? row[mapping.type] : null;
     const type = normalizeType(rawType) || (amount < 0 ? "expense" : "income");

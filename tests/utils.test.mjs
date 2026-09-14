@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  xirr, categoryBreakdown, isDuplicateTransaction, monthsBetweenExclusive,
+  xirr, categoryBreakdown, isDuplicateTransaction, findDuplicateGroups, monthsBetweenExclusive,
   addMonths, monthKey, formatCurrency, formatPercent, sha256Hex, clamp,
 } from "../js/utils.js";
 
@@ -47,6 +47,26 @@ test("isDuplicateTransaction: mesma data/valor/descrição/tipo é duplicata", (
 test("isDuplicateTransaction: valor diferente não é duplicata", () => {
   const existing = [{ date: "2024-05-01", amount: 50, type: "expense", description: "Uber Viagem" }];
   assert.equal(isDuplicateTransaction({ date: "2024-05-01", amount: 51, type: "expense", description: "Uber Viagem" }, existing), false);
+});
+
+test("findDuplicateGroups: agrupa transações repetidas (ex: mesmo extrato importado 2x)", () => {
+  const transactions = [
+    { id: "1", date: "2026-01-05", amount: 100, type: "expense", description: "PAY SUPER" },
+    { id: "2", date: "2026-01-05", amount: 100, type: "expense", description: "pay super" },
+    { id: "3", date: "2026-01-06", amount: 50, type: "expense", description: "Único" },
+  ];
+  const groups = findDuplicateGroups(transactions);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].length, 2);
+  assert.deepEqual(groups[0].map((t) => t.id).sort(), ["1", "2"]);
+});
+
+test("findDuplicateGroups: ignora transferências", () => {
+  const transactions = [
+    { id: "1", date: "2026-01-05", amount: 100, type: "transfer", description: "Transferência" },
+    { id: "2", date: "2026-01-05", amount: 100, type: "transfer", description: "Transferência" },
+  ];
+  assert.deepEqual(findDuplicateGroups(transactions), []);
 });
 
 test("monthsBetweenExclusive: lista meses entre from (exclusive) e to (inclusive)", () => {

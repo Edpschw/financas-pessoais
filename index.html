@@ -67,6 +67,18 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 12 6 8z"/><path d="M9.5 17a2.5 2.5 0 0 0 5 0"/></svg>
         <span>Oportunidades</span>
       </button>
+      <button class="tab-btn" data-view="dados">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>
+        <span>Dados</span>
+      </button>
+      <button class="tab-btn" data-view="analise-mensal">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
+        <span>Análise Mensal</span>
+      </button>
+      <button class="tab-btn" data-view="recorrentes">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        <span>Recorrentes</span>
+      </button>
       <button class="tab-btn" data-view="configuracoes">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="none"/></svg>
         <span>Configurações</span>
@@ -348,6 +360,95 @@
       <div id="opportunities-full-list" class="opportunities-list"></div>
     </section>
 
+    <!-- DADOS (log de importação) -->
+    <section id="view-dados" class="view">
+      <div class="view-header"><h2>Dados</h2></div>
+
+      <div class="card" id="dados-duplicates-card">
+        <h3>Possíveis duplicatas</h3>
+        <p class="muted">Transações com mesma data, valor, tipo e descrição — comum quando o mesmo período é importado de mais de uma fonte (ex: CSV e PDF do mesmo extrato). Mantém a mais completa (com conta vinculada) e permite excluir o resto.</p>
+        <div id="dados-duplicates-summary" class="muted"></div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th><th>Ocorrências</th><th></th></tr></thead>
+            <tbody id="dados-duplicates-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="view-header" style="margin-bottom:6px">
+          <h3 style="margin:0">Transações brutas</h3>
+          <div class="view-actions">
+            <input type="text" id="dados-raw-search" placeholder="Buscar por descrição...">
+          </div>
+        </div>
+        <p class="muted">Todas as transações, sem filtro de mês — pra conferir de olho se receita/despesa batem com o esperado.</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th>Tipo</th><th>Valor</th></tr></thead>
+            <tbody id="dados-raw-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="view-header" style="margin-bottom:6px">
+          <h3 style="margin:0">Log de importação</h3>
+          <div class="view-actions">
+            <button class="btn danger" id="btn-clear-import-log">Limpar histórico</button>
+          </div>
+        </div>
+        <p class="muted">Registro de cada arquivo lido pela pasta automática ou importado manualmente — pra conferir se a leitura funcionou direito.</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Arquivo</th><th>Tipo</th><th>Status</th><th>Quando</th><th>Encontrados</th><th>Importados</th><th>Duplicados</th><th>Avisos</th></tr></thead>
+            <tbody id="dados-import-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ANÁLISE MENSAL -->
+    <section id="view-analise-mensal" class="view">
+      <div class="view-header"><h2>Análise mensal</h2></div>
+      <p class="muted">Receita x despesa mês a mês, últimos 24 meses. Compra/resgate de investimentos (categoria "Investimentos") não entra nessa conta — é dinheiro mudando de lugar, não gasto nem renda de verdade.</p>
+      <div class="cards-grid" id="analise-summary-cards"></div>
+      <div class="card">
+        <canvas id="chart-analise-mensal"></canvas>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Mês</th><th>Receita</th><th>Despesa</th><th>Saldo</th><th>Acumulado</th></tr></thead>
+          <tbody id="analise-monthly-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- RECORRENTES -->
+    <section id="view-recorrentes" class="view">
+      <div class="view-header"><h2>Custos recorrentes e economia</h2></div>
+      <p class="muted">Lançamentos que se repetem em pelo menos 3 dos últimos 12 meses, ranqueados pelo custo total anualizado. Compra/resgate de investimentos não entra aqui.</p>
+      <div class="card">
+        <h3>Maiores custos recorrentes</h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Descrição</th><th>Categoria</th><th>Ocorrências</th><th>Valor médio</th><th>Total anualizado</th></tr></thead>
+            <tbody id="recorrentes-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Potencial de economia</h3>
+        <div id="recorrentes-savings-list" class="opportunities-list"></div>
+      </div>
+      <div class="card">
+        <h3>Sugestões de categorização</h3>
+        <p class="muted">Lançamentos recorrentes hoje classificados como "Outros" — escolha uma categoria e aplique de uma vez a todas as ocorrências (cria uma regra automática também).</p>
+        <div id="recorrentes-suggestions-list" class="opportunities-list"></div>
+      </div>
+    </section>
+
     <!-- CONFIGURAÇÕES -->
     <section id="view-configuracoes" class="view">
       <div class="view-header"><h2>Configurações</h2></div>
@@ -421,7 +522,7 @@
 
       <div class="card">
         <h3>Importação automática de extratos</h3>
-        <p class="muted">Escolha uma pasta do seu computador (ex: onde você salva os extratos baixados do banco). Toda vez que o app abrir — ou quando você clicar em "Verificar agora" — ele lê os arquivos <code>.csv</code>/<code>.ofx</code> novos dessa pasta e importa sozinho, sem precisar selecionar o arquivo manualmente. Só funciona em navegadores baseados em Chromium (Chrome, Edge, Brave); o navegador pode pedir a permissão de novo de tempos em tempos.</p>
+        <p class="muted">Escolha uma pasta do seu computador (ex: onde você salva os extratos baixados do banco). Toda vez que o app abrir — ou quando você clicar em "Verificar agora" — ele lê os arquivos novos dessa pasta e importa sozinho, sem precisar selecionar o arquivo manualmente: <code>.csv</code>, <code>.ofx</code>/<code>.qfx</code>, <code>.xlsx</code>/<code>.xls</code>, <code>.pdf</code> (extrato bancário) e <code>.json</code> (backup exportado pelo próprio app — soma transações e investimentos ao que já existe, não substitui nada). Imagem (<code>.jpg</code>/<code>.png</code>) é reconhecida mas não processada. Só funciona em navegadores baseados em Chromium (Chrome, Edge, Brave); o navegador pode pedir a permissão de novo de tempos em tempos.</p>
         <p id="auto-import-status" class="muted"></p>
         <div class="view-actions">
           <button class="btn secondary" id="btn-select-auto-folder">Selecionar pasta</button>
@@ -675,6 +776,7 @@
 </div>
 
 <script src="js/vendor/chart.umd.js"></script>
+<script src="js/vendor/xlsx.full.min.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

@@ -103,6 +103,22 @@ export function isDuplicateTransaction(candidate, existing) {
   );
 }
 
+// Agrupa transações já existentes no store que são mutuamente "duplicatas" pelo mesmo
+// critério de isDuplicateTransaction (data + valor + tipo + descrição) — útil pra
+// auditar depois de importar o mesmo período de mais de uma fonte (ex: CSV e PDF do
+// mesmo extrato, ou reimportar sem perceber). Transferências ficam de fora: têm campos
+// próprios (fromAccountId/toAccountId) e duplicidade nelas é rara/diferente.
+export function findDuplicateGroups(transactions) {
+  const groups = new Map();
+  transactions.forEach((t) => {
+    if (t.type !== "expense" && t.type !== "income") return;
+    const key = [t.date, Math.round(t.amount * 100), t.type, (t.description || "").trim().toLowerCase()].join("|");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  });
+  return [...groups.values()].filter((g) => g.length > 1);
+}
+
 // Hash simples (SHA-256, hex) usado só para um bloqueio local por PIN — não é uma
 // defesa criptográfica real (os dados continuam em texto plano no localStorage),
 // apenas evita que o PIN fique salvo em claro e dificulta uma espiada casual.

@@ -2,12 +2,14 @@ import { Store, investedTotal, proceedsTotal } from "./storage.js";
 import {
   formatCurrency, formatPercent, monthKey, todayMonthKey, addMonths, monthLabel,
   lastNMonths, CLASS_LABELS, RISK_PROFILES, uniqueSorted, xirr, formatDateBR, clamp,
-  categoryBreakdown, isDuplicateTransaction, sha256Hex, isImportedPlaceholderAccount,
+  categoryBreakdown, isDuplicateTransaction, findDuplicateGroups, sha256Hex, isImportedPlaceholderAccount, debounce,
 } from "./utils.js";
 import { parseCSV, guessMapping, rowsToTransactions } from "./csv-import.js";
 import { parseOFX } from "./ofx-import.js";
 import { computeOpportunities, computeFireProjection } from "./advisor.js";
 import { applyCategoryRules } from "./categorize.js";
+import { detectRecurringGroups, computeSavingsInsights } from "./recurring-analysis.js";
+import { isInvestmentMovement, INVESTMENT_CATEGORY, isAnalyzableTransaction } from "./investment-flow.js";
 import * as AutoImport from "./auto-import.js";
 import {
   cashflowChart, allocationChart, categoriesChart, targetVsActualChart, netWorthChart,
@@ -199,8 +201,8 @@ function renderDashboard() {
   $("#dash-month-label").textContent = monthLabel(dashMonth);
 
   const monthTx = transactions.filter((t) => monthKey(t.date) === dashMonth);
-  const income = monthTx.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
-  const expense = monthTx.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+  const income = monthTx.filter((t) => t.type === "income" && isAnalyzableTransaction(t)).reduce((s, t) => s + t.amount, 0);
+  const expense = monthTx.filter((t) => t.type === "expense" && isAnalyzableTransaction(t)).reduce((s, t) => s + t.amount, 0);
 
   $("#stat-income").textContent = formatCurrency(income);
   $("#stat-expense").textContent = formatCurrency(expense);
@@ -211,8 +213,8 @@ function renderDashboard() {
 
   const months = monthRangeList();
   const labels = months.map((m) => monthLabel(m).split(" de")[0]);
-  const incomeSeries = months.map((m) => transactions.filter((t) => t.type === "income" && monthKey(t.date) === m).reduce((s, t) => s + t.amount, 0));
-  const expenseSeries = months.map((m) => transactions.filter((t) => t.type === "expense" && monthKey(t.date) === m).reduce((s, t) => s + t.amount, 0));
+  const incomeSeries = months.map((m) => transactions.filter((t) => t.type === "income" && isAnalyzableTransaction(t) && monthKey(t.date) === m).reduce((s, t) => s + t.amount, 0));
+  const expenseSeries = months.map((m) => transactions.filter((t) => t.type === "expense" && isAnalyzableTransaction(t) && monthKey(t.date) === m).reduce((s, t) => s + t.amount, 0));
   cashflowChart("chart-cashflow", months, labels, incomeSeries, expenseSeries);
 
   const byClass = {};
@@ -221,7 +223,7 @@ function renderDashboard() {
   allocationChart("chart-allocation", allocLabels, Object.values(byClass));
 
   const byCat = {};
-  monthTx.filter((t) => t.type === "expense").flatMap(categoryBreakdown).forEach((s) => { byCat[s.category] = (byCat[s.category] || 0) + s.amount; });
+  monthTx.filter((t) => t.type === "expense" && isAnalyzableTransaction(t)).flatMap(categoryBreakdown).forEach((s) => { byCat[s.category] = (byCat[s.category] || 0) + s.amount; });
   const sortedCats = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 8);
   categoriesChart("chart-categories", sortedCats.map((c) => c[0]), sortedCats.map((c) => c[1]));
 
@@ -547,7 +549,7 @@ $("#file-csv").addEventListener("change", async (e) => {
   const text = await file.text();
   const { headers, rows } = parseCSV(text);
   if (headers.length === 0) { toast("Não foi possível ler o CSV."); return; }
-  csvStaging = { headers, rows, mapping: guessMapping(headers) };
+  csvStaging = { headers, rows, mapping: guessMapping(headers), fileName: file.name };
   openCsvModal();
   e.target.value = "";
 });
@@ -584,7 +586,9 @@ function withAutoCategory(txs) {
   const { categoryRules } = Store.get();
   return txs.map((tx) => {
     const suggested = applyCategoryRules(tx.description, tx.type, categoryRules);
-    return suggested ? { ...tx, category: suggested } : tx;
+    if (suggested) return { ...tx, category: suggested };
+    if (isInvestmentMovement(tx.description)) return { ...tx, category: INVESTMENT_CATEGORY };
+    return tx;
   });
 }
 
@@ -601,17 +605,23 @@ function dedupeAgainstExisting(candidates) {
 
 $("#btn-confirm-csv").addEventListener("click", () => {
   if (!csvStaging) return;
-  const { rows, mapping } = csvStaging;
+  const { rows, mapping, fileName } = csvStaging;
   if (mapping.date < 0 || mapping.amount < 0) { toast("Selecione ao menos as colunas de data e valor."); return; }
   const selectedAccountId = $("#csv-account").value;
-  const parsed = rowsToTransactions(rows, mapping).map((tx) => ({
+  const rawParsed = rowsToTransactions(rows, mapping);
+  const parsed = rawParsed.map((tx) => ({
     ...tx,
     accountId: selectedAccountId || (!isImportedPlaceholderAccount(tx.account) ? Store.findOrCreateAccount(tx.account) : ""),
   }));
   const withCategory = withAutoCategory(parsed);
   const { toImport, duplicates } = dedupeAgainstExisting(withCategory);
+  Store.markFileImported(`manual:${fileName}:${Date.now()}`, {
+    name: fileName, type: "csv", status: "ok",
+    recordsFound: rawParsed.length, recordsImported: toImport.length, duplicatesSkipped: duplicates, warnings: [],
+  });
   if (toImport.length === 0) {
     toast(duplicates > 0 ? `As ${duplicates} transações já existiam — nada importado.` : "Nenhuma transação válida encontrada no arquivo.");
+    renderDados();
     return;
   }
   Store.addTransactions(toImport);
@@ -619,6 +629,9 @@ $("#btn-confirm-csv").addEventListener("click", () => {
   csvStaging = null;
   renderTransactions();
   renderDashboard();
+  renderAnaliseMensal();
+  renderRecorrentes();
+  renderDados();
   toast(`${toImport.length} transações importadas.${duplicates > 0 ? ` ${duplicates} duplicada(s) ignorada(s).` : ""}`);
 });
 
@@ -629,16 +642,24 @@ $("#file-ofx").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   const text = await file.text();
-  const parsed = withAutoCategory(parseOFX(text));
+  const rawParsed = parseOFX(text);
+  const parsed = withAutoCategory(rawParsed);
   const { toImport, duplicates } = dedupeAgainstExisting(parsed);
+  Store.markFileImported(`manual:${file.name}:${Date.now()}`, {
+    name: file.name, type: "ofx", status: "ok",
+    recordsFound: rawParsed.length, recordsImported: toImport.length, duplicatesSkipped: duplicates, warnings: [],
+  });
   if (toImport.length === 0) {
     toast(duplicates > 0 ? `As ${duplicates} transações já existiam — nada importado.` : "Nenhuma transação encontrada no arquivo OFX.");
   } else {
     Store.addTransactions(toImport);
     renderTransactions();
     renderDashboard();
+    renderAnaliseMensal();
+    renderRecorrentes();
     toast(`${toImport.length} transações importadas do OFX.${duplicates > 0 ? ` ${duplicates} duplicada(s) ignorada(s).` : ""}`);
   }
+  renderDados();
   e.target.value = "";
 });
 
@@ -647,10 +668,13 @@ let autoImportDirHandle = null;
 let autoImportNeedsReauth = false;
 
 function summaryToast(summary) {
-  if (summary.filesImported === 0 && summary.errors.length === 0) return;
+  if (summary.filesImported === 0 && summary.filesUnsupported === 0 && summary.errors.length === 0) return;
   const parts = [];
   if (summary.transactionsImported > 0) parts.push(`${summary.transactionsImported} transação(ões) importada(s)`);
+  if (summary.investmentsImported > 0) parts.push(`${summary.investmentsImported} investimento(s) importado(s)`);
   if (summary.duplicatesSkipped > 0) parts.push(`${summary.duplicatesSkipped} duplicada(s) ignorada(s)`);
+  if (summary.warningsCount > 0) parts.push(`${summary.warningsCount} linha(s) não reconhecida(s) (veja a aba Dados)`);
+  if (summary.filesUnsupported > 0) parts.push(`${summary.filesUnsupported} arquivo(s) não suportado(s) (imagem)`);
   if (summary.errors.length > 0) parts.push(`${summary.errors.length} arquivo(s) com erro`);
   if (parts.length > 0) toast(`Pasta verificada: ${parts.join(", ")}.`);
 }
@@ -683,9 +707,20 @@ async function runAutoImportScan(handle, { requestPermission }) {
   autoImportNeedsReauth = !ok;
   if (!ok) { renderAutoImportStatus(); return; }
   const summary = await AutoImport.scanAndImport(handle);
-  if (summary.transactionsImported > 0) { renderTransactions(); renderDashboard(); renderAccounts(); }
+  if (summary.transactionsImported > 0) {
+    renderTransactions();
+    renderDashboard();
+    renderAccounts();
+    renderAnaliseMensal();
+    renderRecorrentes();
+  }
+  if (summary.investmentsImported > 0) {
+    renderInvestments();
+    renderDashboard();
+  }
   summaryToast(summary);
   renderAutoImportStatus();
+  renderDados();
 }
 
 $("#btn-select-auto-folder").addEventListener("click", async () => {
@@ -720,6 +755,262 @@ async function initAutoImportFolder() {
   autoImportDirHandle = handle;
   await runAutoImportScan(handle, { requestPermission: false });
 }
+
+// ============================================================
+// DADOS (log de importação — auditoria, não edição)
+// ============================================================
+const IMPORT_STATUS_LEVEL = { ok: "positive", partial: "warning", unsupported: "info", error: "critical" };
+const IMPORT_STATUS_LABEL = { ok: "Importado", partial: "Parcial", unsupported: "Não suportado", error: "Erro" };
+
+function renderDadosRaw() {
+  const tbody = $("#dados-raw-table-body");
+  if (!tbody) return;
+  const { transactions } = Store.get();
+  const term = ($("#dados-raw-search").value || "").trim().toLowerCase();
+  const filtered = term
+    ? transactions.filter((t) => (t.description || "").toLowerCase().includes(term))
+    : transactions;
+  const sorted = filtered.slice().sort((a, b) => b.date.localeCompare(a.date));
+
+  tbody.innerHTML = sorted.length === 0
+    ? `<tr><td colspan="6" class="muted">Nenhuma transação${term ? " para essa busca" : ""}.</td></tr>`
+    : sorted.map((t) => `
+        <tr>
+          <td>${formatDateBR(t.date)}</td>
+          <td>${escapeHtml(t.description)}</td>
+          <td>${escapeHtml(t.category || "—")}</td>
+          <td>${escapeHtml(accountLabel(t))}</td>
+          <td>${t.type === "income" ? "Receita" : t.type === "expense" ? "Despesa" : "Transferência"}</td>
+          <td class="amount-${t.type}">${formatCurrency(t.amount)}</td>
+        </tr>
+      `).join("");
+}
+
+$("#dados-raw-search").addEventListener("input", debounce(renderDadosRaw, 200));
+
+function renderDadosDuplicates() {
+  const summaryEl = $("#dados-duplicates-summary");
+  const tbody = $("#dados-duplicates-table-body");
+  if (!tbody) return;
+  const { transactions } = Store.get();
+  const groups = findDuplicateGroups(transactions).sort((a, b) => b[0].date.localeCompare(a[0].date));
+
+  const totalExtra = groups.reduce((s, g) => s + (g.length - 1), 0);
+  summaryEl.textContent = groups.length === 0
+    ? "Nenhuma duplicata encontrada."
+    : `${groups.length} grupo(s), ${totalExtra} transação(ões) extra(s) que podem ser removidas.`;
+
+  tbody.innerHTML = groups.length === 0
+    ? `<tr><td colspan="6" class="muted">Nenhuma duplicata encontrada.</td></tr>`
+    : groups.map((g, i) => {
+        const sample = g[0];
+        return `
+          <tr data-group-index="${i}">
+            <td>${formatDateBR(sample.date)}</td>
+            <td>${escapeHtml(sample.description)}</td>
+            <td>${sample.type === "income" ? "Receita" : "Despesa"}</td>
+            <td class="amount-${sample.type}">${formatCurrency(sample.amount)}</td>
+            <td>${g.length}x</td>
+            <td><button class="btn danger small" data-action="dedupe-group" data-group-index="${i}">Manter 1, excluir ${g.length - 1}</button></td>
+          </tr>
+        `;
+      }).join("");
+}
+
+$("#dados-duplicates-table-body").addEventListener("click", (e) => {
+  const btn = e.target.closest('[data-action="dedupe-group"]');
+  if (!btn) return;
+  const { transactions } = Store.get();
+  const groups = findDuplicateGroups(transactions).sort((a, b) => b[0].date.localeCompare(a[0].date));
+  const group = groups[Number(btn.dataset.groupIndex)];
+  if (!group) return;
+
+  // mantém a transação mais "completa" (com conta vinculada), depois a de categoria
+  // não genérica, e por fim a mais antiga na lista — o resto é removido.
+  const toKeep = group.slice().sort((a, b) => {
+    if (Boolean(a.accountId) !== Boolean(b.accountId)) return a.accountId ? -1 : 1;
+    if ((a.category === "Outros") !== (b.category === "Outros")) return a.category === "Outros" ? 1 : -1;
+    return 0;
+  })[0];
+  const toRemove = group.filter((t) => t.id !== toKeep.id).map((t) => t.id);
+  if (!confirm(`Excluir ${toRemove.length} transação(ões) duplicada(s), mantendo uma?`)) return;
+
+  Store.removeTransactions(toRemove);
+  renderTransactions();
+  renderDashboard();
+  renderDadosRaw();
+  renderDadosDuplicates();
+  renderAnaliseMensal();
+  renderRecorrentes();
+  toast(`${toRemove.length} duplicata(s) removida(s).`);
+});
+
+function renderDados() {
+  renderDadosImportados();
+  renderDadosRaw();
+  renderDadosDuplicates();
+}
+
+function renderDadosImportados() {
+  const tbody = $("#dados-import-table-body");
+  if (!tbody) return;
+  const { importedFiles } = Store.get();
+  const sorted = importedFiles.slice().sort((a, b) => (b.importedAt || "").localeCompare(a.importedAt || ""));
+
+  tbody.innerHTML = sorted.length === 0
+    ? `<tr><td colspan="8" class="muted">Nenhum arquivo importado ainda.</td></tr>`
+    : sorted.map((f) => {
+        const level = IMPORT_STATUS_LEVEL[f.status] || "info";
+        const label = IMPORT_STATUS_LABEL[f.status] || f.status || "—";
+        const when = f.importedAt ? new Date(f.importedAt).toLocaleString("pt-BR") : "—";
+        const warnings = f.warnings || [];
+        const warningsCell = warnings.length === 0 ? "—" : `
+          <details><summary>${warnings.length} linha(s)</summary>
+            <ul>${warnings.slice(0, 20).map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>
+          </details>`;
+        return `
+          <tr>
+            <td>${escapeHtml(f.name || "—")}</td>
+            <td>${escapeHtml((f.type || "?").toUpperCase())}</td>
+            <td><span class="opportunity-chip level-${level}">${label}</span></td>
+            <td>${when}</td>
+            <td>${f.recordsFound ?? "—"}</td>
+            <td>${f.recordsImported ?? "—"}</td>
+            <td>${f.duplicatesSkipped ?? 0}</td>
+            <td>${warningsCell}</td>
+          </tr>
+        `;
+      }).join("");
+}
+
+$("#btn-clear-import-log").addEventListener("click", () => {
+  if (!confirm('Isso apaga o histórico de arquivos importados (não apaga as transações já importadas). Continuar?')) return;
+  Store.forgetImportedFiles();
+  renderDados();
+  toast("Histórico de importação limpo.");
+});
+
+// ============================================================
+// ANÁLISE MENSAL (receita x despesa dos últimos 24 meses)
+// ============================================================
+function shortMonthLabel(monthStr) {
+  const [y, m] = monthStr.split("-").map(Number);
+  const label = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "short" }).replace(".", "");
+  return `${label}/${String(y).slice(-2)}`;
+}
+
+function renderAnaliseMensal() {
+  const { transactions } = Store.get();
+  const months = lastNMonths(24);
+  const incomeSeries = months.map((m) => transactions.filter((t) => t.type === "income" && isAnalyzableTransaction(t) && monthKey(t.date) === m).reduce((s, t) => s + t.amount, 0));
+  const expenseSeries = months.map((m) => transactions.filter((t) => t.type === "expense" && isAnalyzableTransaction(t) && monthKey(t.date) === m).reduce((s, t) => s + t.amount, 0));
+
+  cashflowChart("chart-analise-mensal", months, months.map(shortMonthLabel), incomeSeries, expenseSeries);
+
+  const monthsWithData = months.filter((m, i) => incomeSeries[i] > 0 || expenseSeries[i] > 0).length || 1;
+  const avgIncome = incomeSeries.reduce((a, b) => a + b, 0) / monthsWithData;
+  const avgExpense = expenseSeries.reduce((a, b) => a + b, 0) / monthsWithData;
+  const savingsRate = avgIncome > 0 ? ((avgIncome - avgExpense) / avgIncome) * 100 : 0;
+
+  $("#analise-summary-cards").innerHTML = `
+    <div class="card stat"><span class="stat-label">Receita média/mês</span><span class="stat-value positive">${formatCurrency(avgIncome)}</span></div>
+    <div class="card stat"><span class="stat-label">Despesa média/mês</span><span class="stat-value negative">${formatCurrency(avgExpense)}</span></div>
+    <div class="card stat"><span class="stat-label">Saldo médio/mês</span><span class="stat-value ${avgIncome - avgExpense >= 0 ? "positive" : "negative"}">${formatCurrency(avgIncome - avgExpense)}</span></div>
+    <div class="card stat"><span class="stat-label">Taxa de poupança média</span><span class="stat-value">${formatPercent(savingsRate)}</span></div>
+  `;
+
+  let accumulated = 0;
+  const rows = months.map((m, i) => {
+    const income = incomeSeries[i], expense = expenseSeries[i], balance = income - expense;
+    accumulated += balance;
+    return `
+      <tr>
+        <td>${monthLabel(m)}</td>
+        <td class="amount-income">${formatCurrency(income)}</td>
+        <td class="amount-expense">${formatCurrency(expense)}</td>
+        <td class="${balance >= 0 ? "amount-income" : "amount-expense"}">${formatCurrency(balance)}</td>
+        <td class="${accumulated >= 0 ? "amount-income" : "amount-expense"}">${formatCurrency(accumulated)}</td>
+      </tr>
+    `;
+  });
+  $("#analise-monthly-table-body").innerHTML = rows.slice().reverse().join("");
+}
+
+// ============================================================
+// RECORRENTES (maiores custos recorrentes + potencial de economia + classificação)
+// ============================================================
+function renderRecorrentes() {
+  const { transactions, settings, categoryRules } = Store.get();
+  const analyzable = transactions.filter(isAnalyzableTransaction);
+  const groups = detectRecurringGroups(analyzable, { months: 12, minOccurrences: 3 });
+  const expenseGroups = groups.filter((g) => g.type === "expense");
+
+  const last3Months = lastNMonths(3);
+  const avgIncome = last3Months
+    .map((m) => analyzable.filter((t) => t.type === "income" && monthKey(t.date) === m).reduce((s, t) => s + t.amount, 0))
+    .reduce((a, b) => a + b, 0) / last3Months.length;
+
+  $("#recorrentes-table-body").innerHTML = expenseGroups.length === 0
+    ? `<tr><td colspan="5" class="muted">Nenhum custo recorrente identificado ainda (precisa do mesmo lançamento em pelo menos 3 meses distintos nos últimos 12).</td></tr>`
+    : expenseGroups.slice(0, 20).map((g) => `
+        <tr>
+          <td>${escapeHtml(g.sampleDescription)}</td>
+          <td>${escapeHtml(g.category)}</td>
+          <td>${g.monthsCount}/12</td>
+          <td class="amount-expense">${formatCurrency(g.avgAmount)}</td>
+          <td class="amount-expense">${formatCurrency(g.monthlyEquivalent * 12)}</td>
+        </tr>
+      `).join("");
+
+  $("#recorrentes-savings-list").innerHTML = renderOpportunityCards(computeSavingsInsights(groups, avgIncome));
+
+  const allCats = uniqueSorted([...settings.expenseCategories, ...settings.incomeCategories]);
+  const suggestions = groups.filter((g) => g.category === "Outros");
+  $("#recorrentes-suggestions-list").innerHTML = suggestions.length === 0
+    ? `<p class="empty-opportunities">Nada recorrente em "Outros" pra sugerir categoria no momento.</p>`
+    : suggestions.map((g) => {
+        const already = categoryRules.some((r) => r.type === g.type && r.keyword.toLowerCase() === g.normalized.toLowerCase());
+        const freq = g.type === "expense" ? `${formatCurrency(g.monthlyEquivalent)}/mês` : `${formatCurrency(g.avgAmount)}/ocorrência`;
+        return `
+          <div class="opportunity level-info">
+            <div class="opportunity-title">${escapeHtml(g.sampleDescription)}</div>
+            <div class="opportunity-desc">${g.monthsCount}x nos últimos 12 meses, ${freq}${already ? " — já tem regra criada" : ""}</div>
+            <div class="view-actions" style="margin-top:8px">
+              <select class="suggestion-category" data-normalized="${escapeHtml(g.normalized)}" data-type="${g.type}">
+                ${allCats.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("")}
+              </select>
+              <button class="btn secondary small" data-action="apply-suggestion" data-normalized="${escapeHtml(g.normalized)}" data-type="${g.type}">
+                Aplicar a ${g.transactionIds.length} transaç${g.transactionIds.length === 1 ? "ão" : "ões"}
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("");
+}
+
+$("#recorrentes-suggestions-list").addEventListener("click", (e) => {
+  const btn = e.target.closest('[data-action="apply-suggestion"]');
+  if (!btn) return;
+  const card = btn.closest(".opportunity");
+  const category = card.querySelector(".suggestion-category").value;
+  const { normalized, type } = btn.dataset;
+
+  const { transactions, categoryRules } = Store.get();
+  const group = detectRecurringGroups(transactions, { months: 12, minOccurrences: 3 })
+    .find((g) => g.normalized === normalized && g.type === type);
+  if (!group) return;
+
+  const alreadyHasRule = categoryRules.some((r) => r.type === type && r.keyword.toLowerCase() === normalized.toLowerCase());
+  if (!alreadyHasRule) Store.addCategoryRule({ keyword: normalized, type, category });
+  group.transactionIds.forEach((id) => Store.updateTransaction(id, { category }));
+
+  renderTransactions();
+  renderDashboard();
+  renderAnaliseMensal();
+  renderRecorrentes();
+  renderSettings();
+  toast(`Categoria "${category}" aplicada a ${group.transactionIds.length} transação(ões) e salva como regra.`);
+});
 
 // ---- exportar CSV ----
 function csvEscape(value) {
@@ -1578,6 +1869,9 @@ function renderAll() {
   renderBills();
   renderOpportunitiesView();
   renderSettings();
+  renderDados();
+  renderAnaliseMensal();
+  renderRecorrentes();
 }
 
 $("#tx-filter-month").value = todayMonthKey();

@@ -2,10 +2,15 @@ const STORAGE_KEY = "financas-pessoais:v1";
 
 const DEFAULT_EXPENSE_CATEGORIES = [
   "Moradia", "Alimentação", "Transporte", "Saúde", "Educação",
-  "Lazer", "Compras", "Assinaturas", "Impostos", "Outros"
+  "Lazer", "Compras", "Assinaturas", "Impostos", "Investimentos", "Outros"
 ];
 
-const DEFAULT_INCOME_CATEGORIES = ["Salário", "Freelance", "Rendimentos", "Outros"];
+// "Investimentos" nas duas listas: compra de ativo sai da conta corrente (lado
+// despesa), resgate/venda volta pra conta (lado receita) — nenhum dos dois é gasto ou
+// renda "de verdade", é dinheiro só mudando de lugar. Por isso essa categoria é
+// excluída das somas de receita/despesa no Dashboard, Análise Mensal e Recorrentes
+// (ver js/investment-flow.js e as chamadas de isAnalyzableTransaction em app.js).
+const DEFAULT_INCOME_CATEGORIES = ["Salário", "Freelance", "Rendimentos", "Investimentos", "Outros"];
 
 const ACCOUNT_TYPES = ["corrente", "poupanca", "carteira", "cartao_credito"];
 
@@ -256,6 +261,25 @@ export const Store = {
   addInvestment(inv) {
     state.investments.push({ id: genId(), proceeds: [], ...inv });
     save();
+  },
+  // Usado pela importação automática de pasta ao ler um backup JSON: soma
+  // investimentos novos (casando por nome, sem diferenciar maiúsculas/acentos) sem
+  // apagar nem duplicar o que já existe — se um investimento com o mesmo nome já foi
+  // cadastrado (manualmente ou de uma leitura anterior), essa entrada é ignorada, e o
+  // valor "de verdade" continua sendo editado na aba Investimentos.
+  mergeInvestments(list) {
+    let added = 0;
+    (list || []).forEach((inv) => {
+      const name = (inv.name || "").trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      const exists = state.investments.some((i) => i.name.trim().toLowerCase() === key);
+      if (exists) return;
+      state.investments.push(migrateInvestment({ proceeds: [], ...inv, id: inv.id || genId(), name }));
+      added++;
+    });
+    if (added > 0) save();
+    return added;
   },
   updateInvestment(id, patch) {
     const i = state.investments.findIndex((t) => t.id === id);
