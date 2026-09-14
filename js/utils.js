@@ -1,3 +1,10 @@
+// Rótulo padrão usado por rowsToTransactions/parseOFX quando o arquivo não traz
+// (ou não mapeia) uma coluna de conta. Serve para decidir se vale a pena tentar
+// resolver/criar uma conta pelo nome, ou deixar a transação sem conta vinculada.
+export function isImportedPlaceholderAccount(name) {
+  return name === "Importado (CSV)" || name === "Importado (OFX)";
+}
+
 export function formatCurrency(value) {
   return (value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }

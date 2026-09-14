@@ -50,7 +50,21 @@ export function guessMapping(headers) {
     date: guessColumn(headers, ["data", "date"]),
     description: guessColumn(headers, ["descri", "histor", "memo", "description", "detalhe"]),
     amount: guessColumn(headers, ["valor", "amount", "value"]),
+    type: guessColumn(headers, ["tipo", "type"]),
+    category: guessColumn(headers, ["categ"]),
+    account: guessColumn(headers, ["conta", "account"]),
   };
+}
+
+const EXPENSE_TYPE_WORDS = ["expense", "despesa", "debito", "débito", "saida", "saída", "d"];
+const INCOME_TYPE_WORDS = ["income", "receita", "credito", "crédito", "entrada", "c"];
+
+function normalizeType(raw) {
+  if (!raw) return null;
+  const s = raw.trim().toLowerCase();
+  if (EXPENSE_TYPE_WORDS.includes(s)) return "expense";
+  if (INCOME_TYPE_WORDS.includes(s)) return "income";
+  return null;
 }
 
 function parseBrazilianAmount(raw) {
@@ -65,7 +79,7 @@ function parseBrazilianAmount(raw) {
   return parseFloat(s);
 }
 
-export function rowsToTransactions(rows, mapping, defaultCategory = "Outros") {
+export function rowsToTransactions(rows, mapping, defaultCategory = "Outros", defaultAccount = "Importado (CSV)") {
   const out = [];
   for (const row of rows) {
     const rawDate = row[mapping.date];
@@ -83,13 +97,18 @@ export function rowsToTransactions(rows, mapping, defaultCategory = "Outros") {
       date = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
     }
 
+    const rawType = mapping.type >= 0 ? row[mapping.type] : null;
+    const type = normalizeType(rawType) || (amount < 0 ? "expense" : "income");
+    const rawCategory = mapping.category >= 0 ? (row[mapping.category] || "").trim() : "";
+    const rawAccount = mapping.account >= 0 ? (row[mapping.account] || "").trim() : "";
+
     out.push({
       date,
       description,
       amount: Math.abs(amount),
-      type: amount < 0 ? "expense" : "income",
-      category: defaultCategory,
-      account: "Importado (CSV)",
+      type,
+      category: rawCategory || defaultCategory,
+      account: rawAccount || defaultAccount,
     });
   }
   return out;

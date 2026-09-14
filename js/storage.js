@@ -20,6 +20,7 @@ function defaultState() {
     bills: [],
     categoryRules: [],
     netWorthHistory: [],
+    importedFiles: [],
     settings: {
       riskProfile: "moderado",
       emergencyMonths: 6,
@@ -76,26 +77,33 @@ function migrateAccounts(parsed, transactions) {
   return { accounts, transactions: migratedTx };
 }
 
+// Normaliza um objeto de estado bruto (do localStorage ou de um backup JSON importado),
+// aplicando as mesmas migrações (conta em texto livre -> accounts[], investimento sem
+// contributions, etc.) nos dois casos.
+function normalizeState(parsed) {
+  const base = defaultState();
+  const rawTransactions = (parsed.transactions || base.transactions).map((t) => ({ type: "expense", ...t }));
+  const { accounts, transactions } = migrateAccounts(parsed, rawTransactions);
+  return {
+    transactions,
+    accounts,
+    investments: (parsed.investments || base.investments).map(migrateInvestment),
+    loans: parsed.loans || base.loans,
+    budgets: parsed.budgets || base.budgets,
+    goals: parsed.goals || base.goals,
+    bills: parsed.bills || base.bills,
+    categoryRules: parsed.categoryRules || base.categoryRules,
+    netWorthHistory: parsed.netWorthHistory || base.netWorthHistory,
+    importedFiles: parsed.importedFiles || base.importedFiles,
+    settings: { ...base.settings, ...(parsed.settings || {}) },
+  };
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
-    const parsed = JSON.parse(raw);
-    const base = defaultState();
-    const rawTransactions = (parsed.transactions || base.transactions).map((t) => ({ type: "expense", ...t }));
-    const { accounts, transactions } = migrateAccounts(parsed, rawTransactions);
-    return {
-      transactions,
-      accounts,
-      investments: (parsed.investments || base.investments).map(migrateInvestment),
-      loans: parsed.loans || base.loans,
-      budgets: parsed.budgets || base.budgets,
-      goals: parsed.goals || base.goals,
-      bills: parsed.bills || base.bills,
-      categoryRules: parsed.categoryRules || base.categoryRules,
-      netWorthHistory: parsed.netWorthHistory || base.netWorthHistory,
-      settings: { ...base.settings, ...(parsed.settings || {}) },
-    };
+    return normalizeState(JSON.parse(raw));
   } catch (err) {
     console.error("Falha ao carregar dados, usando estado padrão.", err);
     return defaultState();
@@ -198,6 +206,20 @@ export const Store = {
   addAccount(acc) {
     const id = genId();
     state.accounts.push({ id, initialBalance: 0, ...acc });
+    save();
+    return id;
+  },
+  // Usado pela importação (manual ou automática) quando o extrato traz um nome de
+  // conta em texto: reaproveita uma conta existente com o mesmo nome (sem diferenciar
+  // maiúsculas/acentos) ou cria uma nova do tipo "corrente".
+  findOrCreateAccount(name) {
+    const clean = (name || "").trim();
+    if (!clean) return "";
+    const key = clean.toLowerCase();
+    const existing = state.accounts.find((a) => a.name.trim().toLowerCase() === key);
+    if (existing) return existing.id;
+    const id = genId();
+    state.accounts.push({ id, name: clean, type: "corrente", initialBalance: 0 });
     save();
     return id;
   },
@@ -320,6 +342,21 @@ export const Store = {
     save();
   },
 
+  // Ledger de arquivos já processados pela importação automática de pasta, para não
+  // reimportar o mesmo extrato a cada verificação. A chave identifica um arquivo por
+  // nome+tamanho+data de modificação (não pelo conteúdo, por simplicidade).
+  isFileImported(key) {
+    return state.importedFiles.some((f) => f.key === key);
+  },
+  markFileImported(key, meta = {}) {
+    state.importedFiles.push({ key, importedAt: new Date().toISOString(), ...meta });
+    save();
+  },
+  forgetImportedFiles() {
+    state.importedFiles = [];
+    save();
+  },
+
   // Chamado na inicialização: gera transações de contas fixas marcadas como
   // recorrentes automáticas para os meses já decorridos, evitando duplicatas.
   applyGeneratedTransactions(newTransactions, billUpdates) {
@@ -334,12 +371,7 @@ export const Store = {
   },
 
   replaceAll(newState) {
-    state = {
-      ...defaultState(),
-      ...newState,
-      investments: (newState.investments || []).map(migrateInvestment),
-      accounts: newState.accounts || [],
-    };
+    state = normalizeState(newState);
     save();
   },
   resetAll() {

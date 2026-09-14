@@ -51,3 +51,30 @@ test("rowsToTransactions: ignora linhas com valor zero, inválido ou sem data", 
   const mapping = { date: 0, description: 1, amount: 2 };
   assert.deepEqual(rowsToTransactions(rows, mapping), []);
 });
+
+test("guessMapping: identifica colunas de tipo, categoria e conta", () => {
+  const mapping = guessMapping(["date", "description", "category", "account", "type", "amount"]);
+  assert.equal(mapping.type, 4);
+  assert.equal(mapping.category, 2);
+  assert.equal(mapping.account, 3);
+});
+
+test("rowsToTransactions: usa a coluna de tipo (mesmo com valor sempre positivo) em vez do sinal", () => {
+  const rows = [
+    ["2025-07-01", "Mercado", "Alimentação", "Nubank", "expense", "100"],
+    ["2025-07-25", "Salario", "Salário", "Nubank", "income", "5000"],
+  ];
+  const mapping = { date: 0, description: 1, category: 2, account: 3, type: 4, amount: 5 };
+  const txs = rowsToTransactions(rows, mapping);
+  assert.equal(txs[0].type, "expense");
+  assert.equal(txs[0].category, "Alimentação");
+  assert.equal(txs[0].account, "Nubank");
+  assert.equal(txs[1].type, "income");
+});
+
+test("rowsToTransactions: sem coluna de conta mapeada, usa o rótulo padrão informado", () => {
+  const rows = [["2025-07-01", "Mercado", "-100"]];
+  const mapping = { date: 0, description: 1, amount: 2 };
+  const txs = rowsToTransactions(rows, mapping, "Outros", "Importado (OFX)");
+  assert.equal(txs[0].account, "Importado (OFX)");
+});

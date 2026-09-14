@@ -2,12 +2,13 @@ import { Store, investedTotal, proceedsTotal } from "./storage.js";
 import {
   formatCurrency, formatPercent, monthKey, todayMonthKey, addMonths, monthLabel,
   lastNMonths, CLASS_LABELS, RISK_PROFILES, uniqueSorted, xirr, formatDateBR, clamp,
-  categoryBreakdown, isDuplicateTransaction, sha256Hex,
+  categoryBreakdown, isDuplicateTransaction, sha256Hex, isImportedPlaceholderAccount,
 } from "./utils.js";
 import { parseCSV, guessMapping, rowsToTransactions } from "./csv-import.js";
 import { parseOFX } from "./ofx-import.js";
 import { computeOpportunities, computeFireProjection } from "./advisor.js";
 import { applyCategoryRules } from "./categorize.js";
+import * as AutoImport from "./auto-import.js";
 import {
   cashflowChart, allocationChart, categoriesChart, targetVsActualChart, netWorthChart,
   budgetHistoryChart, accountsBalanceChart,
@@ -553,10 +554,12 @@ $("#file-csv").addEventListener("change", async (e) => {
 
 function openCsvModal() {
   const { headers, rows, mapping } = csvStaging;
-  const fieldNames = { date: "Data", description: "Descrição", amount: "Valor" };
+  const fieldNames = { date: "Data", description: "Descrição", amount: "Valor", type: "Tipo (opcional)", category: "Categoria (opcional)", account: "Conta (opcional)" };
+  const optionalFields = new Set(["type", "category", "account"]);
   const mappingHtml = Object.keys(fieldNames).map((field) => `
     <label>${fieldNames[field]}
       <select data-field="${field}">
+        ${optionalFields.has(field) ? `<option value="-1" ${mapping[field] === -1 ? "selected" : ""}>(não usar)</option>` : ""}
         ${headers.map((h, i) => `<option value="${i}" ${mapping[field] === i ? "selected" : ""}>${escapeHtml(h)}</option>`).join("")}
       </select>
     </label>
@@ -600,8 +603,11 @@ $("#btn-confirm-csv").addEventListener("click", () => {
   if (!csvStaging) return;
   const { rows, mapping } = csvStaging;
   if (mapping.date < 0 || mapping.amount < 0) { toast("Selecione ao menos as colunas de data e valor."); return; }
-  const accountId = $("#csv-account").value;
-  const parsed = rowsToTransactions(rows, mapping).map((tx) => ({ ...tx, accountId }));
+  const selectedAccountId = $("#csv-account").value;
+  const parsed = rowsToTransactions(rows, mapping).map((tx) => ({
+    ...tx,
+    accountId: selectedAccountId || (!isImportedPlaceholderAccount(tx.account) ? Store.findOrCreateAccount(tx.account) : ""),
+  }));
   const withCategory = withAutoCategory(parsed);
   const { toImport, duplicates } = dedupeAgainstExisting(withCategory);
   if (toImport.length === 0) {
@@ -635,6 +641,85 @@ $("#file-ofx").addEventListener("change", async (e) => {
   }
   e.target.value = "";
 });
+
+// ---- Importação automática de pasta ----
+let autoImportDirHandle = null;
+let autoImportNeedsReauth = false;
+
+function summaryToast(summary) {
+  if (summary.filesImported === 0 && summary.errors.length === 0) return;
+  const parts = [];
+  if (summary.transactionsImported > 0) parts.push(`${summary.transactionsImported} transação(ões) importada(s)`);
+  if (summary.duplicatesSkipped > 0) parts.push(`${summary.duplicatesSkipped} duplicada(s) ignorada(s)`);
+  if (summary.errors.length > 0) parts.push(`${summary.errors.length} arquivo(s) com erro`);
+  if (parts.length > 0) toast(`Pasta verificada: ${parts.join(", ")}.`);
+}
+
+function renderAutoImportStatus() {
+  const statusEl = $("#auto-import-status");
+  const rescanBtn = $("#btn-rescan-auto-folder");
+  const forgetBtn = $("#btn-forget-auto-folder");
+  if (!AutoImport.isSupported()) {
+    statusEl.textContent = "Seu navegador não suporta escolher uma pasta (funciona em Chrome/Edge/Brave).";
+    rescanBtn.hidden = true;
+    forgetBtn.hidden = true;
+    return;
+  }
+  if (!autoImportDirHandle) {
+    statusEl.textContent = "Nenhuma pasta selecionada.";
+    rescanBtn.hidden = true;
+    forgetBtn.hidden = true;
+    return;
+  }
+  statusEl.textContent = autoImportNeedsReauth
+    ? `Pasta "${autoImportDirHandle.name}" — acesso expirou, clique em "Verificar agora" para autorizar de novo.`
+    : `Pasta selecionada: "${autoImportDirHandle.name}".`;
+  rescanBtn.hidden = false;
+  forgetBtn.hidden = false;
+}
+
+async function runAutoImportScan(handle, { requestPermission }) {
+  const ok = await AutoImport.verifyPermission(handle, requestPermission);
+  autoImportNeedsReauth = !ok;
+  if (!ok) { renderAutoImportStatus(); return; }
+  const summary = await AutoImport.scanAndImport(handle);
+  if (summary.transactionsImported > 0) { renderTransactions(); renderDashboard(); renderAccounts(); }
+  summaryToast(summary);
+  renderAutoImportStatus();
+}
+
+$("#btn-select-auto-folder").addEventListener("click", async () => {
+  if (!AutoImport.isSupported()) { toast("Seu navegador não suporta essa função."); return; }
+  try {
+    const handle = await window.showDirectoryPicker();
+    await AutoImport.saveDirectoryHandle(handle);
+    autoImportDirHandle = handle;
+    await runAutoImportScan(handle, { requestPermission: true });
+  } catch (err) {
+    if (err.name !== "AbortError") toast("Não foi possível acessar a pasta.");
+  }
+});
+
+$("#btn-rescan-auto-folder").addEventListener("click", async () => {
+  if (!autoImportDirHandle) return;
+  await runAutoImportScan(autoImportDirHandle, { requestPermission: true });
+});
+
+$("#btn-forget-auto-folder").addEventListener("click", async () => {
+  await AutoImport.forgetDirectoryHandle();
+  autoImportDirHandle = null;
+  autoImportNeedsReauth = false;
+  renderAutoImportStatus();
+  toast("Pasta desvinculada. Os extratos já importados continuam salvos.");
+});
+
+async function initAutoImportFolder() {
+  if (!AutoImport.isSupported()) { renderAutoImportStatus(); return; }
+  const handle = await AutoImport.loadDirectoryHandle().catch(() => null);
+  if (!handle) { renderAutoImportStatus(); return; }
+  autoImportDirHandle = handle;
+  await runAutoImportScan(handle, { requestPermission: false });
+}
 
 // ---- exportar CSV ----
 function csvEscape(value) {
@@ -1338,6 +1423,7 @@ function renderSettings() {
   $("#cfg-theme").value = settings.theme;
   $("#btn-remove-pin").hidden = !settings.pinHash;
   renderRules();
+  renderAutoImportStatus();
 }
 
 function renderRules() {
@@ -1508,6 +1594,7 @@ function init() {
   applyTheme();
   generateRecurring();
   renderAll();
+  initAutoImportFolder();
 }
 
 function showApp() {

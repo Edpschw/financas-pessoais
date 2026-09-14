@@ -379,6 +379,17 @@
       </div>
 
       <div class="card">
+        <h3>Importação automática de extratos</h3>
+        <p class="muted">Escolha uma pasta do seu computador (ex: onde você salva os extratos baixados do banco). Toda vez que o app abrir — ou quando você clicar em "Verificar agora" — ele lê os arquivos <code>.csv</code>/<code>.ofx</code> novos dessa pasta e importa sozinho, sem precisar selecionar o arquivo manualmente. Só funciona em navegadores baseados em Chromium (Chrome, Edge, Brave); o navegador pode pedir a permissão de novo de tempos em tempos.</p>
+        <p id="auto-import-status" class="muted"></p>
+        <div class="view-actions">
+          <button class="btn secondary" id="btn-select-auto-folder">Selecionar pasta</button>
+          <button class="btn secondary" id="btn-rescan-auto-folder" hidden>Verificar agora</button>
+          <button class="btn danger" id="btn-forget-auto-folder" hidden>Esquecer pasta</button>
+        </div>
+      </div>
+
+      <div class="card">
         <h3>Dados</h3>
         <p class="muted">Seus dados ficam apenas no seu navegador (localStorage). Faça backup regularmente. Não há sincronização entre dispositivos — use o backup para levar seus dados a outro navegador/aparelho.</p>
         <div class="view-actions">
@@ -605,7 +616,7 @@
     <h3>Importar CSV</h3>
     <p class="muted">Selecione qual coluna do seu arquivo corresponde a cada campo.</p>
     <div class="csv-mapping" id="csv-mapping"></div>
-    <label>Importar para a conta <select id="csv-account"><option value="">(não informar)</option></select></label>
+    <label>Importar para a conta <select id="csv-account"><option value="">(usar coluna "Conta" do arquivo, se houver)</option></select></label>
     <div class="table-wrap">
       <table class="data-table" id="csv-preview-table"></table>
     </div>
