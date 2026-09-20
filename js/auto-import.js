@@ -119,9 +119,22 @@ function dedupeAgainstExisting(candidates) {
   return { toImport, duplicates };
 }
 
-// Devolve sempre {transactions, warnings}, e opcionalmente {investments} (só backup
-// JSON traz isso). csv/ofx/xlsx/json não geram avisos (formato estruturado), só o
-// parser de PDF (js/pdf-import.js) pode devolver linhas ambíguas.
+// Data de modificação do arquivo em ISO — usada como data de referência da carteira
+// quando o próprio PDF não traz uma (ver parsePortfolioLines, que avisa nesse caso).
+// Em fuso local, não UTC: um arquivo salvo às 21h no Brasil é daquele dia, não do
+// seguinte, e a data aqui vira o rótulo do ponto no histórico da carteira.
+function isoDateFromTimestamp(ts) {
+  const date = new Date(ts || Date.now());
+  const valid = Number.isNaN(date.getTime()) ? new Date() : date;
+  const local = new Date(valid.getTime() - valid.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+// Devolve sempre {transactions, warnings}, e opcionalmente {investments} (backup JSON
+// e a posição consolidada em PDF trazem isso). O PDF também devolve `kind`: uma
+// carteira ("portfolio") é uma foto datada, um extrato ("statement") são lançamentos.
+// csv/ofx/xlsx/json não geram avisos (formato estruturado), só o parser de PDF
+// (js/pdf-import.js) pode devolver linhas ambíguas.
 async function parseFile(file, ext) {
   if (ext === ".csv") {
     const { headers, rows } = parseCSV(await file.text());
@@ -180,18 +193,28 @@ export async function scanAndImport(dirHandle) {
     }
 
     try {
-      const { transactions: rawTxs, investments, warnings } = await parseFile(file, ext);
+      const { transactions: rawTxs, investments, warnings, kind, portfolioDate } = await parseFile(file, ext);
       const prepared = tagInvestmentMovements(withResolvedAccount(rawTxs))
         .map((tx) => ({ ...tx, source: file.name }));
       const { toImport, duplicates } = dedupeAgainstExisting(prepared);
       if (toImport.length > 0) Store.addTransactions(toImport);
-      const invResult = investments && investments.length > 0
-        ? Store.mergeInvestments(investments)
-        : { added: 0, updated: 0 };
+      // Carteira em PDF vira snapshot datado (permite comparar datas); backup JSON
+      // continua aditivo, casando por nome.
+      const positions = investments || [];
+      let invResult = { added: 0, updated: 0 };
+      if (positions.length > 0) {
+        invResult = kind === "portfolio"
+          ? Store.recordPortfolioSnapshot({
+              date: portfolioDate || isoDateFromTimestamp(file.lastModified),
+              source: file.name,
+              positions,
+            })
+          : Store.mergeInvestments(positions);
+      }
 
       Store.markFileImported(key, {
         name: file.name, type: ext ? ext.slice(1) : "?", status: warnings.length > 0 ? "partial" : "ok",
-        recordsFound: rawTxs.length + (investments ? investments.length : 0),
+        recordsFound: rawTxs.length + positions.length,
         recordsImported: toImport.length + invResult.added,
         duplicatesSkipped: duplicates, warnings,
       });

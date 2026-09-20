@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseStatementLines, parsePortfolioLines, looksLikePortfolioStatement } from "../js/pdf-import.js";
+import {
+  parseStatementLines, parsePortfolioLines, looksLikePortfolioStatement, findPortfolioReferenceDate,
+} from "../js/pdf-import.js";
 
 test("parseStatementLines: reconhece lançamentos e ignora SALDO DO DIA e rodapé", () => {
   const lines = [
@@ -53,6 +55,7 @@ const CARTEIRA_LINES = [
   "EDUARDO EXEMPLO agência conta corrente",
   "056.441.027-69 8236 15333-7",
   "Posição consolidada",
+  "posição em 31/08/2026",
   "tipo de investimento rendimento (2026) distribuição valor investido",
   "Fundos de Investimento R$ 33.699,65 18,51% R$ 147.221,24",
   "CDB, Renda Fixa e Estruturados R$ 13.320,96 17,41% R$ 138.490,43",
@@ -86,6 +89,38 @@ test("parsePortfolioLines: lê a carteira por tipo e confere com o total do PDF"
   assert.equal(warnings.length, 0, `avisos inesperados: ${warnings}`);
 });
 
+// As colunas do meio do quadro-resumo (rendimento no ano em R$ e fatia da carteira)
+// são a única medida de retorno que o PDF traz pronta — sem elas só restaria cotação
+// de mercado, que o app não busca.
+test("parsePortfolioLines: guarda o rendimento no ano e a distribuição de cada tipo", () => {
+  const { investments } = parsePortfolioLines(CARTEIRA_LINES);
+  const tesouro = investments.find((i) => i.name === "Tesouro Direto");
+  assert.equal(tesouro.yearReturn, 21361.73);
+  assert.equal(tesouro.share, 46.09);
+  assert.deepEqual(investments.map((i) => i.yearReturn), [33699.65, 13320.96, 21361.73, 49717.12]);
+});
+
+test("parsePortfolioLines: lê a data de referência da posição", () => {
+  const { referenceDate } = parsePortfolioLines(CARTEIRA_LINES);
+  assert.equal(referenceDate, "2026-08-31");
+});
+
+test("parsePortfolioLines: sem data de referência, avisa (quem chama usa a data do arquivo)", () => {
+  const semData = CARTEIRA_LINES.filter((l) => l !== "posição em 31/08/2026");
+  const { referenceDate, warnings } = parsePortfolioLines(semData);
+  assert.equal(referenceDate, null);
+  assert.equal(warnings.filter((w) => /data de referência/i.test(w)).length, 1);
+});
+
+test("findPortfolioReferenceDate: aceita as formas que o PDF usa, inclusive glifo a glifo", () => {
+  assert.equal(findPortfolioReferenceDate(["Posição em 31/08/2026"]), "2026-08-31");
+  assert.equal(findPortfolioReferenceDate(["P o s i ç ã o e m 3 1 / 0 8 / 2 0 2 6"]), "2026-08-31");
+  assert.equal(findPortfolioReferenceDate(["Data base: 30/06/2026"]), "2026-06-30");
+  assert.equal(findPortfolioReferenceDate(["período de 01/08/2026 a 31/08/2026"]), "2026-08-31");
+  assert.equal(findPortfolioReferenceDate(["Posição consolidada 31/08/2026"]), "2026-08-31");
+  assert.equal(findPortfolioReferenceDate(["nada por aqui"]), null);
+});
+
 test("parsePortfolioLines: linhas sem valor (Previdência - - -) não viram posição", () => {
   const { investments } = parsePortfolioLines(CARTEIRA_LINES);
   assert.equal(investments.some((i) => /previdência|imobiliári/i.test(i.name)), false);
@@ -94,6 +129,7 @@ test("parsePortfolioLines: linhas sem valor (Previdência - - -) não viram posi
 test("parsePortfolioLines: avisa quando a soma não bate com o total do PDF", () => {
   const { warnings } = parsePortfolioLines([
     "Posição consolidada",
+    "posição em 31/08/2026",
     "Tesouro Direto R$ 1.000,00 10,00% R$ 100.000,00",
     "total investido R$ 250.000,00",
   ]);
