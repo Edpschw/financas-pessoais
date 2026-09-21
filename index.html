@@ -116,8 +116,22 @@
       <h2>Carteira</h2>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>Ativo</th><th>Classe</th><th>Liquidez</th><th class="right">Valor atual</th><th class="pct-col">% da carteira</th></tr></thead>
+          <thead><tr><th>Ativo</th><th>Classe</th><th>Liquidez</th><th class="right">Rendimento no ano</th><th class="right">Valor atual</th><th class="pct-col">% da carteira</th></tr></thead>
           <tbody id="inv-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" id="hist-panel" hidden>
+      <h2>Histórico da carteira</h2>
+      <p class="muted small">
+        Uma linha por posição consolidada lida da pasta. A variação é do patrimônio entre
+        as datas — inclui aportes e resgates, então não é rentabilidade.
+      </p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Data da posição</th><th class="right">Patrimônio</th><th class="right">Variação</th><th>Arquivo</th></tr></thead>
+          <tbody id="hist-table"></tbody>
         </table>
       </div>
     </div>
