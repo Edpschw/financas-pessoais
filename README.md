@@ -15,7 +15,7 @@ Na primeira vez, clique em **Escolher pasta** e aponte para onde você salva os 
 
 > Use o `dev-server.py` (e não `python3 -m http.server`): ele manda `Cache-Control: no-store`. Sem isso o navegador guarda uma versão antiga do app e você pode acabar vendo uma tela em branco depois de uma atualização.
 
-Precisa de um navegador baseado em Chromium (Chrome, Edge, Brave) — a API que lê pastas locais só existe neles. Nenhuma dependência é baixada de CDN: Chart.js, SheetJS e pdf.js vêm embutidos em `js/vendor/`, então o app funciona offline desde a primeira visita.
+Precisa de um navegador baseado em Chromium (Chrome, Edge, Brave) — a API que lê pastas locais só existe neles. Nenhuma dependência é baixada de CDN: Chart.js, SheetJS e pdf.js vêm embutidos em `js/vendor/`, e as fontes em `fonts/`, então o app funciona offline desde a primeira visita e não faz uma única requisição para fora.
 
 ## O que ele lê
 
@@ -32,8 +32,8 @@ O mesmo lançamento vindo de dois arquivos (por exemplo o CSV e o PDF do mesmo m
 
 ## As três telas
 
-- **Receita e gastos** — quanto entra e quanto sai por mês, gastos por categoria, os maiores gastos do período, a tabela mês a mês e uma avaliação crítica (meses no vermelho, gasto recorrente concentrado, categorização fraca, tendência de poupança, receita irregular).
-- **Investimentos** — carteira, alocação por classe e os proventos que caíram na conta. As posições vêm do PDF de posição consolidada ou de um backup JSON. Clique numa posição para ver rentabilidade por período, previsão de valor futuro e uma avaliação de atratividade comparada à Selic/CDI atuais.
+- **Receita e gastos** — dividido em Extrato e Cartão de crédito. Quanto entra e quanto sai por mês, receita/despesa por tipo com percentual (no cartão, categoria aproximada pelo nome do comerciante), os maiores gastos do período, a tabela mês a mês e uma avaliação crítica (meses no vermelho, gasto recorrente concentrado, categorização fraca, tendência de poupança/gasto, receita irregular).
+- **Investimentos** — carteira, alocação por classe, o rendimento do ano informado no PDF e os proventos que caíram na conta. As posições vêm do PDF de posição consolidada ou de um backup JSON. Cada posição consolidada lida vira um ponto no **histórico da carteira**, com a variação do patrimônio entre as datas (variação, não rentabilidade: aportes e resgates entram nela). Clique numa posição para ver rentabilidade por período, previsão de valor futuro e uma avaliação de atratividade comparada à Selic/CDI atuais.
 - **Base de dados** — o que foi lido de cada arquivo, possíveis duplicatas e todos os lançamentos, com busca e filtros.
 
 ## Sobre a avaliação de atratividade

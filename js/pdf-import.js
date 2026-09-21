@@ -56,9 +56,35 @@ export function parseStatementLines(lines, defaultAccount = "Importado (PDF)") {
 // resumo; senão, caímos pro resumo, que nunca falha.
 //
 // Linha do quadro-resumo: "Tesouro Direto R$ 21.361,73 46,09% R$ 366.567,53"
-// (tipo, rendimento no ano, distribuição, valor investido).
+// (tipo, rendimento no ano, distribuição, valor investido). As três colunas numéricas
+// são guardadas: o rendimento no ano é a única medida de retorno que o PDF já traz
+// pronta — sem ela só restaria cotação de mercado, que o app não busca (é offline).
 const SUMMARY_ROW_RE = /^(.+?)\s+R\$\s*(-?[\d.,]+)\s+(-?[\d.,]+)%\s+R\$\s*([\d.,]+)$/;
 const TOTAL_RE = /total\s+investido\s+R\$\s*([\d.,]+)/i;
+
+// Data de referência da posição — sem ela a carteira não tem história, só um valor
+// solto. O PDF escreve de formas diferentes conforme o documento, e o texto pode vir
+// glifo a glifo (ver itemsToLines), por isso o casamento é feito sobre a linha já sem
+// espaços. Se nenhuma bater, quem chama usa a data de modificação do arquivo.
+const REFERENCE_DATE_PATTERNS = [
+  /posi[çc][ãa]oem(\d{2}\/\d{2}\/\d{4})/,
+  /posi[çc][ãa]oconsolidada[^\d]{0,20}(\d{2}\/\d{2}\/\d{4})/,
+  /per[íi]odode\d{2}\/\d{2}\/\d{4}a(\d{2}\/\d{2}\/\d{4})/,
+  /database:?(\d{2}\/\d{2}\/\d{4})/,
+  /datadeposi[çc][ãa]o:?(\d{2}\/\d{2}\/\d{4})/,
+  /(?:datade)?refer[êe]ncia:?(\d{2}\/\d{2}\/\d{4})/,
+];
+
+export function findPortfolioReferenceDate(lines) {
+  for (const rawLine of lines) {
+    const compact = (rawLine || "").toLowerCase().replace(/\s+/g, "");
+    for (const pattern of REFERENCE_DATE_PATTERNS) {
+      const match = compact.match(pattern);
+      if (match) return normalizeDateToISO(match[1]);
+    }
+  }
+  return null;
+}
 
 // O nome do tipo no resumo → classe usada pelo app.
 function classFromSummaryLabel(label) {
@@ -96,13 +122,24 @@ export function parsePortfolioLines(lines) {
     const row = line.match(SUMMARY_ROW_RE);
     if (!row) continue;
 
-    const [, label, , , rawValue] = row;
+    const [, label, rawYearReturn, rawShare, rawValue] = row;
     const name = label.replace(/\s{2,}/g, " ").trim();
     const value = parseBrazilianAmount(rawValue);
     if (!name || !Number.isFinite(value) || value <= 0) continue;
     if (/total/i.test(name)) continue;
 
-    investments.push({ name, class: classFromSummaryLabel(name), currentValue: value });
+    const yearReturn = parseBrazilianAmount(rawYearReturn);
+    const share = parseBrazilianAmount(rawShare);
+    investments.push({
+      name,
+      class: classFromSummaryLabel(name),
+      currentValue: value,
+      // Como impresso no PDF: rendimento em R$ no ano corrente e a fatia da carteira.
+      // Nenhum percentual de rentabilidade é derivado daqui — com aporte no meio do
+      // ano, rendimento dividido por valor não é retorno, é um número enganoso.
+      yearReturn: Number.isFinite(yearReturn) ? yearReturn : null,
+      share: Number.isFinite(share) ? share : null,
+    });
   }
 
   const sum = investments.reduce((s, i) => s + i.currentValue, 0);
@@ -115,7 +152,14 @@ export function parsePortfolioLines(lines) {
     warnings.push("O PDF informa um total investido, mas nenhuma linha por tipo de investimento foi reconhecida.");
   }
 
-  return { investments, warnings, statedTotal };
+  const referenceDate = findPortfolioReferenceDate(lines);
+  if (!referenceDate && investments.length > 0) {
+    warnings.push(
+      "Data de referência não encontrada no PDF — a posição foi registrada com a data de modificação do arquivo."
+    );
+  }
+
+  return { investments, warnings, statedTotal, referenceDate };
 }
 
 // ---- detalhe por posição individual ----
@@ -424,18 +468,20 @@ export async function parsePdf(arrayBuffer, defaultAccount = "Importado (PDF)") 
   const lines = rows.map(rowToLine);
 
   if (looksLikePortfolioStatement(lines)) {
-    const { investments: byClass, warnings, statedTotal } = parsePortfolioLines(lines);
+    const { investments: byClass, warnings, statedTotal, referenceDate } = parsePortfolioLines(lines);
     const detail = parsePortfolioDetail(rows);
     const detailTotal = detail.investments.reduce((s, i) => s + i.currentValue, 0);
     const byClassTotal = statedTotal !== null ? statedTotal : byClass.reduce((s, i) => s + i.currentValue, 0);
     const detailReconciles = detail.reliable && detail.investments.length > 0
       && Math.abs(detailTotal - byClassTotal) < 0.5;
-    console.log("[DEBUG parsePdf]", JSON.stringify({
-      reliable: detail.reliable, numDetail: detail.investments.length, detailTotal, byClassTotal, detailReconciles,
-      names: detail.investments.map((i) => i.name),
-    }));
-    return { transactions: [], investments: detailReconciles ? detail.investments : byClass, warnings };
+    return {
+      kind: "portfolio",
+      transactions: [],
+      investments: detailReconciles ? detail.investments : byClass,
+      warnings,
+      portfolioDate: referenceDate,
+    };
   }
   const { transactions, warnings } = parseStatementLines(lines, defaultAccount);
-  return { transactions, investments: [], warnings };
+  return { kind: "statement", transactions, investments: [], warnings };
 }

@@ -414,8 +414,17 @@ function renderInvestimentos() {
     ? "Nenhuma posição — importe um backup JSON com investimentos para a pasta."
     : `${investments.length} ${investments.length === 1 ? "posição" : "posições"} · ${classEntries.length} ${classEntries.length === 1 ? "classe" : "classes"}`;
 
+  // O PDF de posição consolidada traz o rendimento em R$ no ano corrente por tipo de
+  // investimento. É mostrado como veio: derivar um percentual dividindo pelo valor
+  // atual daria um número errado sempre que houve aporte durante o ano.
+  const withYearReturn = investments.filter((i) => typeof i.yearReturn === "number");
+  const yearReturnTotal = withYearReturn.reduce((s, i) => s + i.yearReturn, 0);
+
   $("#inv-stats").innerHTML = `
     ${statCard("Total investido", formatCurrency(total), "", `${investments.length} posições`)}
+    ${withYearReturn.length > 0
+      ? statCard("Rendimento no ano", formatCurrency(yearReturnTotal), yearReturnTotal >= 0 ? "positive" : "negative", "como informado no PDF da carteira")
+      : ""}
     ${statCard("Proventos (12 meses)", formatCurrency(proceedsTotal), "positive", `${proceeds12.length} créditos no extrato`)}
     ${statCard("Maior classe", biggestClass ? biggestClass[0] : "—", "",
       biggestClass && total > 0 ? `${formatPercent((biggestClass[1] / total) * 100)} da carteira` : "—")}
@@ -437,7 +446,7 @@ function renderInvestimentos() {
   );
 
   $("#inv-table").innerHTML = investments.length === 0
-    ? `<tr><td colspan="5" class="empty-row">Nenhuma posição cadastrada.</td></tr>`
+    ? `<tr><td colspan="6" class="empty-row">Nenhuma posição cadastrada.</td></tr>`
     : investments.slice().sort((a, b) => (b.currentValue || 0) - (a.currentValue || 0)).map((inv) => {
         const pct = total > 0 ? ((inv.currentValue || 0) / total) * 100 : 0;
         const isOpen = expandedInvestments.has(inv.name);
@@ -446,6 +455,9 @@ function renderInvestimentos() {
             <td class="desc">${isOpen ? "▾" : "▸"} ${escapeHtml(inv.name)}</td>
             <td>${escapeHtml(CLASS_LABELS[inv.class] || inv.class || "—")}</td>
             <td>${escapeHtml(liquidityLabel(inv.liquidity))}</td>
+            <td class="right ${typeof inv.yearReturn === "number" ? (inv.yearReturn >= 0 ? "amount-income" : "amount-expense") : ""}">${
+              typeof inv.yearReturn === "number" ? formatCurrency(inv.yearReturn) : "—"
+            }</td>
             <td class="right">${formatCurrency(inv.currentValue)}</td>
             <td>
               <div class="pct-cell">
@@ -457,13 +469,42 @@ function renderInvestimentos() {
         if (!isOpen) return row;
         return row + `
           <tr class="inv-detail-row">
-            <td colspan="5">
+            <td colspan="6">
               <div class="inv-detail">
                 ${renderInvestmentDetail(inv, { allInvestments: investments, totalPortfolio: total, benchmark })}
               </div>
             </td>
           </tr>`;
       }).join("");
+
+  renderPortfolioHistory();
+}
+
+// Série de posições consolidadas lidas da pasta. Uma data só já vale: mostra de quando
+// é a carteira que está na tela. Com duas ou mais, aparece a variação do patrimônio —
+// variação, não rentabilidade: aporte e resgate entram nela (ver investment-flow.js).
+function renderPortfolioHistory() {
+  const snapshots = Store.portfolioHistory();
+  $("#hist-panel").hidden = snapshots.length === 0;
+  if (snapshots.length === 0) return;
+
+  const rows = snapshots.map((snap, i) => {
+    const previous = i > 0 ? snapshots[i - 1] : null;
+    const delta = previous ? snap.total - previous.total : null;
+    const deltaPct = previous && previous.total > 0 ? (delta / previous.total) * 100 : null;
+    return `
+      <tr>
+        <td>${formatDateBR(snap.date)}</td>
+        <td class="right">${formatCurrency(snap.total)}</td>
+        <td class="right ${delta === null ? "" : delta >= 0 ? "amount-income" : "amount-expense"}">${
+          delta === null
+            ? "—"
+            : `${delta >= 0 ? "+" : ""}${formatCurrency(delta)}${deltaPct === null ? "" : ` (${deltaPct >= 0 ? "+" : ""}${formatPercent(deltaPct)})`}`
+        }</td>
+        <td class="desc">${escapeHtml(snap.source || "—")}</td>
+      </tr>`;
+  });
+  $("#hist-table").innerHTML = rows.reverse().join("");
 }
 
 function topInvestment(investments) {

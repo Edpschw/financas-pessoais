@@ -23,8 +23,14 @@ export function formatCurrency(value) {
   return (value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+// Em pt-BR, como formatCurrency: o app inteiro escreve 1.234,56, então "46.1%" com
+// ponto destoava do resto da tela.
 export function formatPercent(value, digits = 1) {
-  return `${(value || 0).toFixed(digits)}%`;
+  const formatted = (value || 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+  return `${formatted}%`;
 }
 
 export function monthKey(dateStr) {
