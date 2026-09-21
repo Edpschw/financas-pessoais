@@ -31,11 +31,11 @@ npm test
 
 - `index.html` — shell das três telas (sem modais: não há edição).
 - `js/app.js` — orquestração e render de tudo.
-- `js/storage.js` — cache do que foi lido, no `localStorage`; ledger dos arquivos já processados.
+- `js/storage.js` — cache do que foi lido, no `localStorage`; ledger dos arquivos já processados; série de snapshots da carteira (`portfolioSnapshots`).
 - `js/auto-import.js` — varre a pasta (File System Access API: `showDirectoryPicker`, só Chromium), guarda o handle no IndexedDB, despacha para o parser certo e descarta duplicatas.
 - `js/csv-import.js` — parser de CSV + utilidades compartilhadas por todos os formatos (`guessMapping`, `rowsToTransactions`, `parseBrazilianAmount`, `normalizeDateToISO`). `parseBrazilianAmount` aceita 1.234,56 e 1,234.56 — planilha de banco mistura os dois.
 - `js/excel-import.js` — planilhas. Procura a linha de cabeçalho de verdade (exportação de banco tem um bloco de nome/agência/conta antes da tabela) e reconhece fatura de cartão, onde valor positivo é gasto (inverso do extrato).
-- `js/pdf-import.js` — PDF via pdf.js, com dois formatos: **extrato** (`DD/MM/YYYY DESCRIÇÃO VALOR`, pulando "SALDO DO DIA"; linha com data que não bate o padrão vira aviso) e **posição consolidada** (carteira). Na carteira, a tabela por produto não sobrevive à reconstrução de linhas — nome e colunas se misturam —, então é lido o quadro-resumo por tipo de investimento, que é bem formado, e a soma é conferida contra o total impresso no PDF (divergência vira aviso). A reconstrução de linhas só insere espaço quando há vão horizontal de verdade: esse PDF devolve um item por glifo, e juntar tudo com espaço quebrava até os números.
+- `js/pdf-import.js` — PDF via pdf.js, com dois formatos: **extrato** (`DD/MM/YYYY DESCRIÇÃO VALOR`, pulando "SALDO DO DIA"; linha com data que não bate o padrão vira aviso) e **posição consolidada** (carteira). Na carteira, a tabela por produto não sobrevive à reconstrução de linhas — nome e colunas se misturam —, então é lido o quadro-resumo por tipo de investimento, que é bem formado, e a soma é conferida contra o total impresso no PDF (divergência vira aviso). A reconstrução de linhas só insere espaço quando há vão horizontal de verdade: esse PDF devolve um item por glifo, e juntar tudo com espaço quebrava até os números. Do quadro-resumo saem também o rendimento em R$ no ano e a distribuição por tipo, e a data de referência da posição é procurada em várias formas ("posição em", "data base", período) sobre a linha sem espaços — se não achar, vira aviso e quem chama usa a data de modificação do arquivo.
 - `js/ofx-import.js`, `js/json-import.js` — OFX e backup JSON (este é **aditivo**: soma transações e investimentos, não substitui nada).
 - `js/investment-flow.js` — separa movimentação de principal (compra/resgate) de provento recebido.
 - `js/charts.js` — gráficos; cores lidas dos tokens CSS, então seguem o tema.
@@ -48,6 +48,8 @@ npm test
 - **Itens de fatura de cartão também ficam fora das somas** (categoria "Fatura cartão"). O extrato já contabiliza a fatura como um pagamento único ("ITAU BLACK ..."); somar os itens junto contaria o mesmo gasto duas vezes. O detalhe existe para consulta na tela 3.
 - **Imagem (`.jpg`/`.png`) é reconhecida mas não processada** — OCR de foto de recibo é pesado e pouco confiável. Aparece como "não suportado" no log.
 - **A leitura da pasta não é um watcher**: é a File System Access API do próprio navegador, rodando quando o app abre ou no botão "Atualizar". Não existe processo em segundo plano — isso exigiria um servidor, que o projeto não tem.
+- **A posição consolidada é uma foto datada, não um valor que se sobrescreve** — cada leitura vira um snapshot em `portfolioSnapshots`, guardado pela data de referência, e a carteira exibida é derivada do snapshot mais recente. Reler o PDF da mesma data substitui aquela foto; outra data entra como ponto novo na série. Sem isso o PDF novo apagava o anterior e não havia como medir progressão. O backup JSON continua aditivo (casa por nome), e as posições que ele traz sobrevivem ao snapshot.
+- **Nenhum percentual de rentabilidade é derivado do rendimento do PDF** — com aporte no meio do ano, rendimento dividido por valor atual não é retorno. O R$ aparece como veio; a variação do patrimônio entre snapshots é rotulada como variação, não rentabilidade.
 - **Nada é digitado à mão.** Se faltou um dado, a resposta é colocar o arquivo na pasta, não criar um formulário.
 
 ## Restrições do projeto

@@ -33,7 +33,7 @@ O mesmo lançamento vindo de dois arquivos (por exemplo o CSV e o PDF do mesmo m
 ## As três telas
 
 - **Receita e gastos** — quanto entra e quanto sai por mês, gastos por categoria, os maiores gastos do período e a tabela mês a mês.
-- **Investimentos** — carteira, alocação por classe e os proventos que caíram na conta. As posições vêm do PDF de posição consolidada ou de um backup JSON.
+- **Investimentos** — carteira, alocação por classe, o rendimento do ano informado no PDF e os proventos que caíram na conta. As posições vêm do PDF de posição consolidada ou de um backup JSON. Cada posição consolidada lida vira um ponto no **histórico da carteira**, com a variação do patrimônio entre as datas (variação, não rentabilidade: aportes e resgates entram nela).
 - **Base de dados** — o que foi lido de cada arquivo, possíveis duplicatas e todos os lançamentos, com busca e filtros.
 
 ## Duas contas que o app não soma (de propósito)
