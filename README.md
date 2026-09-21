@@ -15,7 +15,7 @@ Na primeira vez, clique em **Escolher pasta** e aponte para onde você salva os 
 
 > Use o `dev-server.py` (e não `python3 -m http.server`): ele manda `Cache-Control: no-store`. Sem isso o navegador guarda uma versão antiga do app e você pode acabar vendo uma tela em branco depois de uma atualização.
 
-Precisa de um navegador baseado em Chromium (Chrome, Edge, Brave) — a API que lê pastas locais só existe neles. Nenhuma dependência é baixada de CDN: Chart.js, SheetJS e pdf.js vêm embutidos em `js/vendor/`, então o app funciona offline desde a primeira visita.
+Precisa de um navegador baseado em Chromium (Chrome, Edge, Brave) — a API que lê pastas locais só existe neles. Nenhuma dependência é baixada de CDN: Chart.js, SheetJS e pdf.js vêm embutidos em `js/vendor/`, e as fontes em `fonts/`, então o app funciona offline desde a primeira visita e não faz uma única requisição para fora.
 
 ## O que ele lê
 
