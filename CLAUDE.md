@@ -40,6 +40,7 @@ npm test
 - `js/investment-flow.js` — separa movimentação de principal (compra/resgate) de provento recebido.
 - `js/charts.js` — gráficos; cores lidas dos tokens CSS, então seguem o tema.
 - `js/utils.js` — formatadores, datas, dedupe e as categorias que ficam fora do fluxo.
+- `css/fonts.css` + `fonts/` — as fontes da identidade visual (Sora, Public Sans, IBM Plex Mono) servidas do próprio projeto. Só os subsets latin e latin-ext; Public Sans e Sora são variáveis, então um arquivo atende todos os pesos. O cabeçalho de `css/fonts.css` explica como atualizar.
 - `js/vendor/` — bibliotecas vendorizadas (não editar; rebaixar via `npm pack`): Chart.js, SheetJS (`XLSX` global, carregado por `<script>`) e pdf.js (ES module, importado dentro de `pdf-import.js`).
 
 ## Decisões que não são óbvias no código
@@ -50,6 +51,7 @@ npm test
 - **A leitura da pasta não é um watcher**: é a File System Access API do próprio navegador, rodando quando o app abre ou no botão "Atualizar". Não existe processo em segundo plano — isso exigiria um servidor, que o projeto não tem.
 - **A posição consolidada é uma foto datada, não um valor que se sobrescreve** — cada leitura vira um snapshot em `portfolioSnapshots`, guardado pela data de referência, e a carteira exibida é derivada do snapshot mais recente. Reler o PDF da mesma data substitui aquela foto; outra data entra como ponto novo na série. Sem isso o PDF novo apagava o anterior e não havia como medir progressão. O backup JSON continua aditivo (casa por nome), e as posições que ele traz sobrevivem ao snapshot.
 - **Nenhum percentual de rentabilidade é derivado do rendimento do PDF** — com aporte no meio do ano, rendimento dividido por valor atual não é retorno. O R$ aparece como veio; a variação do patrimônio entre snapshots é rotulada como variação, não rentabilidade.
+- **Nenhum recurso vem de CDN, nem fonte** — o `<link>` para o Google Fonts entregava IP e referer a um terceiro a cada abertura e deixava a primeira visita sem rede com a fonte de fallback. Fonte nova entra em `fonts/`, nunca por URL externa.
 - **Nada é digitado à mão.** Se faltou um dado, a resposta é colocar o arquivo na pasta, não criar um formulário.
 
 ## Restrições do projeto
