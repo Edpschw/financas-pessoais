@@ -45,9 +45,15 @@ test("shortMonthLabel: rótulo curto para eixo de gráfico", () => {
   assert.match(shortMonthLabel("2026-01"), /\/26$/);
 });
 
+test("formatPercent: vírgula decimal, como o resto dos números em pt-BR", () => {
+  assert.equal(formatPercent(46.09), "46,1%");
+  assert.equal(formatPercent(-3.25), "-3,3%");
+  assert.equal(formatPercent(1234.5, 2), "1.234,50%");
+});
+
 test("formatadores não quebram com undefined", () => {
   assert.equal(typeof formatCurrency(undefined), "string");
-  assert.equal(formatPercent(undefined), "0.0%");
+  assert.equal(formatPercent(undefined), "0,0%");
   assert.equal(formatDateBR(""), "");
   assert.equal(formatDateBR("2026-02-03"), "03/02/2026");
 });
