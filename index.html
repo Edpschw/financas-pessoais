@@ -49,29 +49,45 @@
         <h1>Receita e gastos</h1>
         <p class="muted" id="fluxo-subtitle">—</p>
       </div>
-      <label class="field-inline">Período
-        <select id="fluxo-range">
-          <option value="6">Últimos 6 meses</option>
-          <option value="12" selected>Últimos 12 meses</option>
-          <option value="24">Últimos 24 meses</option>
-        </select>
-      </label>
+      <div class="filters">
+        <label class="field-inline">Fonte
+          <select id="fluxo-source">
+            <option value="extrato" selected>Extrato</option>
+            <option value="cartao">Cartão de crédito</option>
+          </select>
+        </label>
+        <label class="field-inline">Período
+          <select id="fluxo-range">
+            <option value="6">Últimos 6 meses</option>
+            <option value="12" selected>Últimos 12 meses</option>
+            <option value="24">Últimos 24 meses</option>
+          </select>
+        </label>
+      </div>
     </div>
 
     <div class="stat-grid" id="fluxo-stats"></div>
 
+    <div class="grid-2">
+      <div class="panel" id="fluxo-income-types-panel">
+        <h2>Receita por tipo</h2>
+        <p class="muted small">Percentual da receita do período.</p>
+        <div class="rank-list" id="fluxo-income-types"></div>
+      </div>
+      <div class="panel" id="fluxo-expense-types-panel">
+        <h2 id="fluxo-expense-types-title">Despesas por tipo</h2>
+        <p class="muted small" id="fluxo-expense-types-subtitle">Percentual da despesa do período.</p>
+        <div class="rank-list" id="fluxo-expense-types"></div>
+      </div>
+    </div>
+
     <div class="panel">
-      <h2>Receita × despesa por mês</h2>
-      <p class="muted small">Compra e resgate de investimentos ficam de fora — é dinheiro mudando de lugar, não gasto nem renda.</p>
+      <h2 id="fluxo-chart-title">Receita × despesa por mês</h2>
+      <p class="muted small" id="fluxo-chart-subtitle">Compra e resgate de investimentos ficam de fora — é dinheiro mudando de lugar, não gasto nem renda.</p>
       <div class="chart-box"><canvas id="chart-fluxo"></canvas></div>
     </div>
 
     <div class="grid-2">
-      <div class="panel">
-        <h2>Gastos por categoria</h2>
-        <p class="muted small">Soma do período selecionado.</p>
-        <div class="chart-box short"><canvas id="chart-categorias"></canvas></div>
-      </div>
       <div class="panel">
         <h2>Maiores gastos do período</h2>
         <p class="muted small">Lançamentos agrupados por descrição.</p>
@@ -83,10 +99,16 @@
       <h2>Mês a mês</h2>
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>Mês</th><th class="right">Receita</th><th class="right">Despesa</th><th class="right">Saldo</th><th class="right">Acumulado</th></tr></thead>
+          <thead id="fluxo-table-head"><tr><th>Mês</th><th class="right">Receita</th><th class="right">Despesa</th><th class="right">Saldo</th><th class="right">Acumulado</th></tr></thead>
           <tbody id="fluxo-table"></tbody>
         </table>
       </div>
+    </div>
+
+    <div class="panel">
+      <h2>Avaliação crítica</h2>
+      <p class="muted small" id="fluxo-insights-subtitle">Um julgamento sobre o que está entrando e saindo, não só os números.</p>
+      <div class="insight-list" id="fluxo-insights"></div>
     </div>
   </section>
 
@@ -97,6 +119,10 @@
         <h1>Investimentos</h1>
         <p class="muted" id="inv-subtitle">—</p>
       </div>
+    </div>
+
+    <div class="panel">
+      <p class="muted small" id="inv-benchmark-text">Buscando Selic/CDI atuais...</p>
     </div>
 
     <div class="stat-grid" id="inv-stats"></div>
@@ -116,6 +142,7 @@
 
     <div class="panel">
       <h2>Carteira</h2>
+      <p class="muted small">Clique numa posição para ver rentabilidade, previsão e atratividade.</p>
       <div class="table-wrap">
         <table class="data-table">
           <thead><tr><th>Ativo</th><th>Classe</th><th>Liquidez</th><th class="right">Valor atual</th><th class="pct-col">% da carteira</th></tr></thead>

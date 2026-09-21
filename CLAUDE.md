@@ -1,6 +1,6 @@
 # Finanças Pessoais
 
-Visualizador de finanças pessoais 100% client-side. **O app não tem formulários**: ele lê uma pasta do computador (extratos em CSV/OFX/Excel/PDF e backup JSON) e mostra três telas. Toda vez que abre, relê a pasta e incorpora o que for novo. Nada sai do navegador.
+Visualizador de finanças pessoais 100% client-side. **O app não tem formulários**: ele lê uma pasta do computador (extratos em CSV/OFX/Excel/PDF e backup JSON) e mostra três telas. Toda vez que abre, relê a pasta e incorpora o que for novo. Nada sai do navegador, além da cotação/benchmark pública opcional (Selic/CDI, ver `js/rates.js`).
 
 ## Stack
 
@@ -23,8 +23,8 @@ npm test
 
 ## As três telas
 
-1. **Receita e gastos** — médias por mês, receita × despesa (6/12/24 meses), gastos por categoria, maiores gastos agrupados por descrição, tabela mês a mês com acumulado.
-2. **Investimentos** — total, proventos recebidos (identificados nos extratos), alocação por classe e a carteira. As posições vêm do PDF de posição consolidada ou de um backup JSON na pasta.
+1. **Receita e gastos** — médias por mês, receita × despesa (6/12/24 meses), gastos por categoria, maiores gastos agrupados por descrição, tabela mês a mês com acumulado, e uma **avaliação crítica** (meses no vermelho, concentração de gasto recorrente, "Outros" dominante, tendência de poupança, volatilidade de receita — `js/cashflow-insight.js`).
+2. **Investimentos** — total, proventos recebidos (identificados nos extratos), alocação por classe e a carteira. As posições vêm do PDF de posição consolidada (resumo por classe, e detalhe por produto quando a extração bate com o resumo) ou de um backup JSON na pasta. Cada posição é expansível: rentabilidade por período, taxa/vencimento (renda fixa), **previsão de valor futuro** e **avaliação de atratividade** contra Selic/CDI atuais — `js/investment-insight.js` + `js/rates.js`.
 3. **Base de dados** — o que foi lido: log por arquivo (encontrados/importados/duplicados/avisos), detector de duplicatas e a tabela bruta de lançamentos com busca e filtros.
 
 ## Estrutura
@@ -35,9 +35,12 @@ npm test
 - `js/auto-import.js` — varre a pasta (File System Access API: `showDirectoryPicker`, só Chromium), guarda o handle no IndexedDB, despacha para o parser certo e descarta duplicatas.
 - `js/csv-import.js` — parser de CSV + utilidades compartilhadas por todos os formatos (`guessMapping`, `rowsToTransactions`, `parseBrazilianAmount`, `normalizeDateToISO`). `parseBrazilianAmount` aceita 1.234,56 e 1,234.56 — planilha de banco mistura os dois.
 - `js/excel-import.js` — planilhas. Procura a linha de cabeçalho de verdade (exportação de banco tem um bloco de nome/agência/conta antes da tabela) e reconhece fatura de cartão, onde valor positivo é gasto (inverso do extrato).
-- `js/pdf-import.js` — PDF via pdf.js, com dois formatos: **extrato** (`DD/MM/YYYY DESCRIÇÃO VALOR`, pulando "SALDO DO DIA"; linha com data que não bate o padrão vira aviso) e **posição consolidada** (carteira). Na carteira, a tabela por produto não sobrevive à reconstrução de linhas — nome e colunas se misturam —, então é lido o quadro-resumo por tipo de investimento, que é bem formado, e a soma é conferida contra o total impresso no PDF (divergência vira aviso). A reconstrução de linhas só insere espaço quando há vão horizontal de verdade: esse PDF devolve um item por glifo, e juntar tudo com espaço quebrava até os números.
+- `js/pdf-import.js` — PDF via pdf.js, com dois formatos: **extrato** (`DD/MM/YYYY DESCRIÇÃO VALOR`, pulando "SALDO DO DIA"; linha com data que não bate o padrão vira aviso) e **posição consolidada** (carteira). Na carteira sempre se lê o quadro-resumo por tipo de investimento (bem formado, soma conferida contra o total impresso no PDF). Também se tenta o detalhe por produto individual — nome, rentabilidade por período, taxa/vencimento — reconstruído pela posição X dos tokens (colunas descobertas por seção, não pelo texto do cabeçalho) e pelo vão vertical entre linhas (um produto quebra em várias linhas visuais; o nome pode continuar em linhas *depois* do valor que fecha a posição, então o fim de um produto só é decidido por um vão bem maior que o espaçamento normal de linha, não pelo valor). O detalhe só é usado se a soma das posições bater com o quadro-resumo (rede de segurança); senão, cai de volta pro resumo, sem alarme. A reconstrução de linhas só insere espaço quando há vão horizontal de verdade: esse PDF devolve um item por glifo, e juntar tudo com espaço quebrava até os números.
 - `js/ofx-import.js`, `js/json-import.js` — OFX e backup JSON (este é **aditivo**: soma transações e investimentos, não substitui nada).
 - `js/investment-flow.js` — separa movimentação de principal (compra/resgate) de provento recebido.
+- `js/rates.js` — busca Selic e CDI atuais na API pública do Banco Central (SGS), cacheado 1 dia no `localStorage`. Timeout curto e falha silenciosa (devolve `null`, nunca lança) — é a **única** chamada de rede do app, e só serve de benchmark para a atratividade; sem ela, cai no fallback offline.
+- `js/investment-insight.js` — previsão de valor futuro (juros compostos pela taxa contratada, ou retorno de 12 meses projetado) e atratividade (compara com Selic/CDI quando há rede; senão, com a mediana da própria carteira). Sempre com o motivo explícito — nunca só um selo.
+- `js/cashflow-insight.js` — avaliação crítica de receita/gastos, só a partir das transações já lidas (sem rede, sem dado novo).
 - `js/charts.js` — gráficos; cores lidas dos tokens CSS, então seguem o tema.
 - `js/utils.js` — formatadores, datas, dedupe e as categorias que ficam fora do fluxo.
 - `js/vendor/` — bibliotecas vendorizadas (não editar; rebaixar via `npm pack`): Chart.js, SheetJS (`XLSX` global, carregado por `<script>`) e pdf.js (ES module, importado dentro de `pdf-import.js`).

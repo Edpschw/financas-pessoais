@@ -32,9 +32,13 @@ O mesmo lançamento vindo de dois arquivos (por exemplo o CSV e o PDF do mesmo m
 
 ## As três telas
 
-- **Receita e gastos** — quanto entra e quanto sai por mês, gastos por categoria, os maiores gastos do período e a tabela mês a mês.
-- **Investimentos** — carteira, alocação por classe e os proventos que caíram na conta. As posições vêm do PDF de posição consolidada ou de um backup JSON.
+- **Receita e gastos** — quanto entra e quanto sai por mês, gastos por categoria, os maiores gastos do período, a tabela mês a mês e uma avaliação crítica (meses no vermelho, gasto recorrente concentrado, categorização fraca, tendência de poupança, receita irregular).
+- **Investimentos** — carteira, alocação por classe e os proventos que caíram na conta. As posições vêm do PDF de posição consolidada ou de um backup JSON. Clique numa posição para ver rentabilidade por período, previsão de valor futuro e uma avaliação de atratividade comparada à Selic/CDI atuais.
 - **Base de dados** — o que foi lido de cada arquivo, possíveis duplicatas e todos os lançamentos, com busca e filtros.
+
+## Sobre a avaliação de atratividade
+
+Pra comparar um investimento com "o mercado", o app busca a Selic e o CDI atuais na API pública do Banco Central — a única informação que sai do seu navegador, e só isso: nenhum dado seu é enviado. Sem internet, a avaliação cai para comparar o investimento com a própria carteira, e o app deixa isso visível em vez de fingir que é a mesma coisa.
 
 ## Duas contas que o app não soma (de propósito)
 
@@ -43,7 +47,7 @@ O mesmo lançamento vindo de dois arquivos (por exemplo o CSV e o PDF do mesmo m
 
 ## Privacidade
 
-Não há backend, telemetria nem integração com bancos. Os dados ficam no `localStorage` do seu navegador e os arquivos nunca saem da sua máquina.
+Não há backend, telemetria nem integração com bancos. Os dados ficam no `localStorage` do seu navegador e os arquivos nunca saem da sua máquina — a única exceção é uma consulta pública e opcional à Selic/CDI (Banco Central) para avaliar investimentos, que não envia nenhum dado seu, só busca a taxa do dia.
 
 ## Rodando os testes
 

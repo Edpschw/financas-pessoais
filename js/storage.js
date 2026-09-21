@@ -1,6 +1,9 @@
 // Persistência local (localStorage). O app é um visualizador da pasta de extratos:
 // o estado aqui é um cache do que já foi lido dos arquivos, mais o ledger de quais
 // arquivos já foram processados — nada é digitado à mão.
+import { isInvestmentMovement } from "./investment-flow.js";
+import { INVESTMENT_CATEGORY } from "./utils.js";
+
 const STORAGE_KEY = "financas-pessoais:v1";
 
 function defaultState() {
@@ -54,6 +57,20 @@ function migrateAccounts(parsed, transactions) {
   return { accounts, transactions: migrated };
 }
 
+// Reclassifica pela descrição, não só no momento da importação: a lista de palavras-
+// chave de `isInvestmentMovement` melhora com o tempo (layouts de extrato novos,
+// produtos novos), e um lançamento já salvo antes dessa melhoria ficaria errado pra
+// sempre se a checagem só rodasse na hora de importar o arquivo — a pasta não é
+// reimportada (o ledger pula arquivo já lido), então isso é feito de novo a cada
+// carregamento, sobre o que já está salvo.
+function retagInvestmentMovements(transactions) {
+  return transactions.map((t) => (
+    t.category !== INVESTMENT_CATEGORY && isInvestmentMovement(t.description)
+      ? { ...t, category: INVESTMENT_CATEGORY }
+      : t
+  ));
+}
+
 // Normaliza qualquer estado bruto (localStorage de uma versão anterior, que podia ter
 // empréstimos/metas/orçamentos) para a forma atual, descartando o que não existe mais.
 function normalizeState(parsed) {
@@ -63,7 +80,7 @@ function normalizeState(parsed) {
     .map((t) => ({ category: "Outros", ...t }));
   const { accounts, transactions } = migrateAccounts(parsed, rawTransactions);
   return {
-    transactions,
+    transactions: retagInvestmentMovements(transactions),
     accounts,
     investments: (parsed.investments || base.investments).map(migrateInvestment),
     importedFiles: parsed.importedFiles || base.importedFiles,
@@ -123,22 +140,34 @@ export const Store = {
     return acc ? acc.name : "";
   },
 
-  // Soma investimentos vindos de um backup JSON da pasta, casando por nome para não
-  // duplicar a mesma posição a cada nova leitura do mesmo arquivo. Uma posição que já
-  // existe tem o valor atualizado (o arquivo mais recente manda).
+  // Soma investimentos vindos de um backup JSON ou do PDF detalhado, casando por nome
+  // para não duplicar a mesma posição a cada nova leitura. Uma posição que já existe
+  // tem o valor atualizado (o arquivo mais recente manda), e os campos de detalhe
+  // (`returns`, `maturity`, `contractedRatePct`, `liquidity`) são só acrescentados
+  // quando a fonte nova os traz — assim um backup JSON básico entrando depois de um
+  // PDF detalhado não apaga o detalhe, e vice-versa.
   mergeInvestments(list) {
     let added = 0;
     let updated = 0;
+    const DETAIL_FIELDS = ["returns", "maturity", "contractedRatePct", "liquidity"];
     (list || []).forEach((inv) => {
       const name = (inv.name || "").trim();
       if (!name) return;
       const key = name.toLowerCase();
       const existing = state.investments.find((i) => i.name.trim().toLowerCase() === key);
       if (existing) {
+        let changed = false;
         if (typeof inv.currentValue === "number" && inv.currentValue !== existing.currentValue) {
           existing.currentValue = inv.currentValue;
-          updated++;
+          changed = true;
         }
+        DETAIL_FIELDS.forEach((field) => {
+          if (inv[field] !== undefined && inv[field] !== null) {
+            existing[field] = inv[field];
+            changed = true;
+          }
+        });
+        if (changed) updated++;
         return;
       }
       state.investments.push(migrateInvestment({ ...inv, id: inv.id || genId(), name }));

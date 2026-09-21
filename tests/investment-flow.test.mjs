@@ -16,6 +16,23 @@ test("isInvestmentMovement: não confunde com provento recebido nem com gasto do
   assert.equal(isInvestmentMovement(undefined), false);
 });
 
+test("isInvestmentMovement: reconhece aplicação em fundo, liquidação de bolsa/tesouro e transferência pra corretora de investimento no exterior", () => {
+  assert.equal(isInvestmentMovement("PRI APLICACAO VILEGE INT"), true);
+  assert.equal(isInvestmentMovement("COR TES DIRETO - VENDA"), true);
+  assert.equal(isInvestmentMovement("COR OPERACOES B3 04/05"), true);
+  assert.equal(isInvestmentMovement("COR IRRF TD."), true);
+  assert.equal(isInvestmentMovement("COR IRRF TD. IRRF 10 TITULOS NTN-B"), true);
+  assert.equal(isInvestmentMovement("PIX TRANSF AVENUE 22/01"), true);
+  assert.equal(isInvestmentMovement("TED 001.2807.FUNDO G D C"), true);
+});
+
+test("isInvestmentMovement: 'aplicacao' não colide com o rendimento diário automático", () => {
+  // "REND PAGO APLIC AUT MAIS" é o rendimento pago de uma aplicação automática —
+  // receita de verdade. A abreviação "APLIC" (sem o sufixo "-acao") não deve casar
+  // com a palavra-chave "aplicacao".
+  assert.equal(isInvestmentMovement("REND PAGO APLIC AUT MAIS"), false);
+});
+
 test("isProceeds: provento é receita, identificado por categoria ou descrição", () => {
   assert.equal(isProceeds({ type: "income", category: "Rendimentos", description: "qualquer" }), true);
   assert.equal(isProceeds({ type: "income", category: "Outros", description: "COR JSCP PETR3" }), true);

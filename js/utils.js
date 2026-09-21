@@ -101,6 +101,19 @@ export function findDuplicateGroups(transactions) {
   return [...groups.values()].filter((g) => g.length > 1);
 }
 
+// Agrupa gastos/descrições por texto normalizado (sem a data/ID que muda a cada mês)
+// para mostrar para onde o dinheiro realmente foi, tanto nos "maiores gastos" quanto
+// na avaliação crítica de concentração de despesa recorrente.
+export function normalizeDescription(desc) {
+  return (desc || "")
+    .toUpperCase()
+    .replace(/\d{1,2}\/\d{1,2}(\/\d{2,4})?/g, "")
+    .replace(/\b\d{4,}\b/g, "")
+    .replace(/[-–—]+\s*$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function debounce(fn, wait = 250) {
   let t;
   return (...args) => {

@@ -5,11 +5,15 @@ import { Store } from "./storage.js";
 import {
   formatCurrency, formatPercent, monthKey, todayMonthKey, monthLabel, shortMonthLabel,
   lastNMonths, formatDateBR, findDuplicateGroups, debounce, CLASS_LABELS,
-  isCashFlow, INVESTMENT_CATEGORY, CARD_INVOICE_CATEGORY,
+  isCashFlow, INVESTMENT_CATEGORY, CARD_INVOICE_CATEGORY, normalizeDescription,
 } from "./utils.js";
 import { isProceeds } from "./investment-flow.js";
-import { cashflowChart, categoriesChart, allocationChart, proceedsChart, resizeCharts } from "./charts.js";
+import { cashflowChart, allocationChart, proceedsChart, resizeCharts } from "./charts.js";
 import * as AutoImport from "./auto-import.js";
+import { fetchBenchmarkRates } from "./rates.js";
+import { computeForecast, computeAttractiveness } from "./investment-insight.js";
+import { computeCashflowInsights, computeCardInsights } from "./cashflow-insight.js";
+import { inferCardCategory } from "./card-category.js";
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -76,7 +80,21 @@ function cashFlowTransactions() {
   return Store.get().transactions.filter(isCashFlow);
 }
 
+function cardTransactions() {
+  return Store.get().transactions.filter((t) => t.category === CARD_INVOICE_CATEGORY);
+}
+
+let fluxoSource = "extrato";
+
+// Extrato e cartão escrevem nos mesmos elementos da aba (não há duas telas) — cada
+// função ajusta o que for específico dela (título do gráfico, cabeçalho da tabela,
+// mostrar/esconder o painel de categoria) antes de preencher o resto.
 function renderFluxo() {
+  if (fluxoSource === "cartao") renderFluxoCartao();
+  else renderFluxoExtrato();
+}
+
+function renderFluxoExtrato() {
   const months = monthsInRange();
   const txs = cashFlowTransactions();
   const inRange = txs.filter((t) => months.includes(monthKey(t.date)));
@@ -101,43 +119,124 @@ function renderFluxo() {
     ${statCard("Taxa de poupança", formatPercent(savingsRate), savingsRate >= 0 ? "positive" : "negative", "do que entra, quanto sobra")}
   `;
 
+  $("#fluxo-chart-title").textContent = "Receita × despesa por mês";
+  $("#fluxo-chart-subtitle").textContent = "Compra e resgate de investimentos ficam de fora — é dinheiro mudando de lugar, não gasto nem renda.";
   cashflowChart("chart-fluxo", months.map(shortMonthLabel), income, expense);
 
-  // gastos por categoria
-  const byCategory = {};
-  inRange.filter((t) => t.type === "expense").forEach((t) => {
-    byCategory[t.category || "Outros"] = (byCategory[t.category || "Outros"] || 0) + t.amount;
-  });
-  const cats = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  categoriesChart("chart-categorias", cats.map((c) => c[0]), cats.map((c) => c[1]));
+  $("#fluxo-income-types-panel").hidden = false;
+  renderTypeBreakdown("#fluxo-income-types", inRange.filter((t) => t.type === "income"), (t) => t.category || "Outros", "da receita");
+
+  $("#fluxo-expense-types-panel").hidden = false;
+  $("#fluxo-expense-types-title").textContent = "Despesas por tipo";
+  $("#fluxo-expense-types-subtitle").textContent = "Percentual da despesa do período.";
+  renderTypeBreakdown("#fluxo-expense-types", inRange.filter((t) => t.type === "expense"), (t) => t.category || "Outros", "da despesa");
 
   renderTopExpenses(inRange);
-  renderFluxoTable(months, income, expense);
+
+  $("#fluxo-table-head").innerHTML = `<tr><th>Mês</th><th class="right">Receita</th><th class="right">Despesa</th><th class="right">Saldo</th><th class="right">Acumulado</th></tr>`;
+  let accumulated = 0;
+  const rows = months.map((m, i) => {
+    const balance = income[i] - expense[i];
+    accumulated += balance;
+    return `
+      <tr>
+        <td>${monthLabel(m)}</td>
+        <td class="right amount-income">${formatCurrency(income[i])}</td>
+        <td class="right amount-expense">${formatCurrency(expense[i])}</td>
+        <td class="right ${balance >= 0 ? "amount-income" : "amount-expense"}">${formatCurrency(balance)}</td>
+        <td class="right ${accumulated >= 0 ? "amount-income" : "amount-expense"}">${formatCurrency(accumulated)}</td>
+      </tr>`;
+  });
+  $("#fluxo-table").innerHTML = rows.reverse().join("");
+
+  $("#fluxo-insights-subtitle").textContent = "Um julgamento sobre o que está entrando e saindo, não só os números.";
+  renderInsightCards(computeCashflowInsights(inRange, months), "Sem lançamentos suficientes no período para uma avaliação.");
 }
 
-// Agrupa gastos por descrição normalizada (sem a data/ID que muda a cada mês) para
-// mostrar para onde o dinheiro realmente foi no período.
-function normalizeDescription(desc) {
-  return (desc || "")
-    .toUpperCase()
-    .replace(/\d{1,2}\/\d{1,2}(\/\d{2,4})?/g, "")
-    .replace(/\b\d{4,}\b/g, "")
-    .replace(/[-–—]+\s*$/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+// A fatura tem uma linha de pagamento/reconciliação (`type: "income"`, ex: "Pagamento
+// Efetuado") que zera a fatura no próprio arquivo exportado — não é receita nem
+// estorno de compra, então as métricas de gasto usam só `type === "expense"`.
+function renderFluxoCartao() {
+  const months = monthsInRange();
+  const txs = cardTransactions();
+  const inRange = txs.filter((t) => months.includes(monthKey(t.date)));
+  const purchases = inRange.filter((t) => t.type === "expense");
+
+  const spend = months.map((m) => sumBy(purchases, (t) => monthKey(t.date) === m));
+  const activeMonths = spend.filter((v) => v > 0).length || 1;
+  const totalSpend = spend.reduce((a, b) => a + b, 0);
+  const avgSpend = totalSpend / activeMonths;
+  const maxIdx = spend.reduce((best, v, i) => (v > spend[best] ? i : best), 0);
+  const hasMax = spend[maxIdx] > 0;
+  const topMerchant = groupByDescription(purchases)[0] || null;
+
+  $("#fluxo-subtitle").textContent = purchases.length === 0
+    ? "Nenhuma compra no período."
+    : `${purchases.length} compras · ${activeMonths} ${activeMonths === 1 ? "mês" : "meses"} com movimento`;
+
+  $("#fluxo-stats").innerHTML = `
+    ${statCard("Gasto médio/mês", formatCurrency(avgSpend), "negative", "média dos meses com compras")}
+    ${statCard("Maior fatura do período", hasMax ? formatCurrency(spend[maxIdx]) : "—", "negative", hasMax ? monthLabel(months[maxIdx]) : "—")}
+    ${statCard("Total gasto no período", formatCurrency(totalSpend), "negative", `${purchases.length} ${purchases.length === 1 ? "compra" : "compras"}`)}
+    ${statCard("Maior gasto recorrente", topMerchant ? topMerchant.key : "—", "", topMerchant ? formatCurrency(topMerchant.total) : "—")}
+  `;
+
+  $("#fluxo-chart-title").textContent = "Gasto por mês";
+  $("#fluxo-chart-subtitle").textContent = "Só as compras da fatura — a linha de pagamento que zera a fatura não entra aqui.";
+  proceedsChart("chart-fluxo", months.map(shortMonthLabel), spend, { color: "--negative", label: "Gasto" });
+
+  // não existe "receita" de cartão — o painel some, e a categoria (inferida pelo
+  // nome do comerciante, já que a fatura não traz categoria por item) ocupa a linha.
+  $("#fluxo-income-types-panel").hidden = true;
+  $("#fluxo-expense-types-panel").hidden = false;
+  $("#fluxo-expense-types-title").textContent = "Despesas do cartão por tipo";
+  $("#fluxo-expense-types-subtitle").textContent = "Categoria aproximada pelo nome do comerciante — percentual do gasto do cartão no período.";
+  renderTypeBreakdown("#fluxo-expense-types", purchases, (t) => inferCardCategory(t.description), "do gasto do cartão");
+
+  renderTopExpenses(purchases);
+
+  $("#fluxo-table-head").innerHTML = `<tr><th>Mês</th><th class="right">Gasto</th></tr>`;
+  $("#fluxo-table").innerHTML = months.map((m, i) => `
+      <tr>
+        <td>${monthLabel(m)}</td>
+        <td class="right amount-expense">${formatCurrency(spend[i])}</td>
+      </tr>`).reverse().join("");
+
+  $("#fluxo-insights-subtitle").textContent = "Um julgamento sobre os gastos do cartão, não só o total da fatura.";
+  renderInsightCards(computeCardInsights(purchases, months), "Sem compras suficientes no período para uma avaliação.");
 }
 
-function renderTopExpenses(transactions) {
+const CASHFLOW_INSIGHT_LABEL = { ok: "Ok", warn: "Atenção", error: "Alerta" };
+
+function renderInsightCards(insights, emptyMessage) {
+  $("#fluxo-insights").innerHTML = insights.length === 0
+    ? `<p class="muted small">${escapeHtml(emptyMessage)}</p>`
+    : insights.map((i) => `
+        <div class="insight-card">
+          <span class="chip ${i.level}">${CASHFLOW_INSIGHT_LABEL[i.level] || i.level}</span>
+          <div class="body">
+            <div class="title">${escapeHtml(i.title)}</div>
+            <div class="desc">${escapeHtml(i.desc)}</div>
+          </div>
+        </div>`).join("");
+}
+
+// Agrupa por descrição normalizada (sem a data/ID que muda a cada mês) — reaproveitado
+// tanto pelo ranking de "maiores gastos" quanto pelo stat de "maior gasto recorrente".
+function groupByDescription(transactions) {
   const groups = new Map();
-  transactions.filter((t) => t.type === "expense").forEach((t) => {
+  transactions.forEach((t) => {
     const key = normalizeDescription(t.description) || t.description;
-    if (!groups.has(key)) groups.set(key, { key, total: 0, count: 0, sample: t.description });
+    if (!groups.has(key)) groups.set(key, { key, total: 0, count: 0 });
     const g = groups.get(key);
     g.total += t.amount;
     g.count += 1;
   });
+  return [...groups.values()].sort((a, b) => b.total - a.total);
+}
 
-  const ranked = [...groups.values()].sort((a, b) => b.total - a.total).slice(0, 8);
+function renderTopExpenses(transactions) {
+  const ranked = groupByDescription(transactions.filter((t) => t.type === "expense")).slice(0, 8);
   const max = ranked.length > 0 ? ranked[0].total : 0;
 
   $("#fluxo-top-expenses").innerHTML = ranked.length === 0
@@ -154,31 +253,150 @@ function renderTopExpenses(transactions) {
       `).join("");
 }
 
-function renderFluxoTable(months, income, expense) {
-  let accumulated = 0;
-  const rows = months.map((m, i) => {
-    const balance = income[i] - expense[i];
-    accumulated += balance;
-    return `
-      <tr>
-        <td>${monthLabel(m)}</td>
-        <td class="right amount-income">${formatCurrency(income[i])}</td>
-        <td class="right amount-expense">${formatCurrency(expense[i])}</td>
-        <td class="right ${balance >= 0 ? "amount-income" : "amount-expense"}">${formatCurrency(balance)}</td>
-        <td class="right ${accumulated >= 0 ? "amount-income" : "amount-expense"}">${formatCurrency(accumulated)}</td>
-      </tr>`;
+// Agrupa por uma chave qualquer (categoria da receita/despesa no extrato, categoria
+// inferida do comerciante no cartão) e mostra o percentual sobre o total do próprio
+// grupo passado — reaproveita o mesmo template visual de renderTopExpenses/rank-row.
+function renderTypeBreakdown(targetSelector, transactions, keyFn, totalLabel) {
+  const groups = new Map();
+  transactions.forEach((t) => {
+    const key = keyFn(t);
+    if (!groups.has(key)) groups.set(key, { key, total: 0, count: 0 });
+    const g = groups.get(key);
+    g.total += t.amount;
+    g.count += 1;
   });
-  $("#fluxo-table").innerHTML = rows.reverse().join("");
+  const ranked = [...groups.values()].sort((a, b) => b.total - a.total);
+  const total = ranked.reduce((s, g) => s + g.total, 0);
+  const max = ranked.length > 0 ? ranked[0].total : 0;
+
+  $(targetSelector).innerHTML = ranked.length === 0
+    ? `<p class="muted small">Nenhum lançamento no período.</p>`
+    : ranked.map((g) => {
+        const pct = total > 0 ? (g.total / total) * 100 : 0;
+        return `
+          <div class="rank-row">
+            <div>
+              <div class="name">${escapeHtml(g.key)}</div>
+              <div class="meta">${g.count}${g.count === 1 ? " lançamento" : " lançamentos"} · ${formatPercent(pct)} ${totalLabel}</div>
+            </div>
+            <div class="value">${formatCurrency(g.total)}</div>
+            <div class="rank-bar"><i style="width:${max > 0 ? (g.total / max) * 100 : 0}%"></i></div>
+          </div>`;
+      }).join("");
 }
 
 $("#fluxo-range").addEventListener("change", renderFluxo);
+$("#fluxo-source").addEventListener("change", (e) => {
+  fluxoSource = e.target.value;
+  renderFluxo();
+});
 
 // ============================================================
 // 2. INVESTIMENTOS
 // ============================================================
+let benchmark = null;
+const expandedInvestments = new Set();
+
+const PERIOD_LABELS = {
+  monthCurrent: "Mês atual",
+  monthPrevious: "Mês anterior",
+  yearCurrent: "Ano atual",
+  yearPrevious: "Ano anterior",
+  last12Months: "Últimos 12 meses",
+  sinceInception: "Desde o início",
+};
+
+const ATTRACTIVENESS_CHIP = { atrativo: "ok", neutro: "accent", atencao: "warn" };
+const ATTRACTIVENESS_LABEL = { atrativo: "Atrativo", neutro: "Neutro", atencao: "Atenção" };
+
+function renderBenchmarkCard() {
+  const el = $("#inv-benchmark-text");
+  if (!el) return;
+  if (benchmark && (benchmark.selicPct !== null || benchmark.cdiPct !== null)) {
+    const parts = [];
+    if (benchmark.selicPct !== null) parts.push(`Selic ${formatPercent(benchmark.selicPct)} a.a.`);
+    if (benchmark.cdiPct !== null) parts.push(`CDI ${formatPercent(benchmark.cdiPct)} a.a.`);
+    const when = new Date(benchmark.fetchedAt).toLocaleDateString("pt-BR");
+    el.textContent = `Atratividade comparada à ${parts.join(" e ")} atuais (Banco Central, atualizado em ${when}).`;
+  } else {
+    el.textContent = "Sem conexão com o Banco Central — atratividade comparada com a própria carteira, não com Selic/CDI.";
+  }
+}
+
+function renderReturnsTable(returns) {
+  if (!returns) return `<p class="muted small">Sem rentabilidade detalhada para esta posição.</p>`;
+  const rows = Object.entries(PERIOD_LABELS)
+    .map(([key, label]) => ({ label, r: returns[key] }))
+    .filter(({ r }) => r && (r.value !== null || r.pct !== null));
+  if (rows.length === 0) return `<p class="muted small">Sem rentabilidade detalhada para esta posição.</p>`;
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Período</th><th class="right">Valor</th><th class="right">%</th></tr></thead>
+        <tbody>
+          ${rows.map(({ label, r }) => `
+            <tr>
+              <td>${label}</td>
+              <td class="right">${r.value !== null ? formatCurrency(r.value) : "—"}</td>
+              <td class="right">${r.pct !== null ? formatPercent(r.pct) : "—"}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function renderForecastBlock(inv) {
+  const forecast = computeForecast(inv);
+  if (!forecast) return `<p class="muted small">Sem dado suficiente para projetar (falta taxa/vencimento ou retorno dos últimos 12 meses).</p>`;
+  if (forecast.basis === "taxa_contratada") {
+    return `
+      <p class="small">Projeção no vencimento (${formatDateBR(forecast.maturity)}): <strong>${formatCurrency(forecast.projectedValue)}</strong></p>
+      <p class="muted small">${escapeHtml(forecast.disclaimer)}</p>`;
+  }
+  return `
+    <div class="stat-grid">
+      ${forecast.horizons.map((h) => statCard(`Em ${h.years} ${h.years === 1 ? "ano" : "anos"}`, formatCurrency(h.projectedValue), "", "")).join("")}
+    </div>
+    <p class="muted small">${escapeHtml(forecast.disclaimer)}</p>`;
+}
+
+function renderInvestmentDetail(inv, ctx) {
+  const { level, reasons } = computeAttractiveness(inv, ctx);
+  const chipCls = ATTRACTIVENESS_CHIP[level] || "";
+  const chipLabel = ATTRACTIVENESS_LABEL[level] || level;
+  const rateBits = [];
+  if (typeof inv.contractedRatePct === "number") rateBits.push(`Taxa contratada: <strong>${formatPercent(inv.contractedRatePct)}</strong> a.a.`);
+  if (inv.maturity) rateBits.push(`Vencimento: <strong>${formatDateBR(inv.maturity)}</strong>`);
+
+  return `
+    <div class="insight-card">
+      <span class="chip ${chipCls}">${chipLabel}</span>
+      <div class="body">
+        <div class="title">Atratividade</div>
+        <div class="desc">${reasons.map(escapeHtml).join("<br>")}</div>
+      </div>
+    </div>
+    ${rateBits.length > 0 ? `<p class="small" style="margin-top:10px">${rateBits.join(" · ")}</p>` : ""}
+    <h3>Rentabilidade por período</h3>
+    ${renderReturnsTable(inv.returns)}
+    <h3>Previsão</h3>
+    ${renderForecastBlock(inv)}
+  `;
+}
+
+$("#inv-table").addEventListener("click", (e) => {
+  const row = e.target.closest(".inv-row");
+  if (!row) return;
+  const name = row.dataset.inv;
+  if (expandedInvestments.has(name)) expandedInvestments.delete(name);
+  else expandedInvestments.add(name);
+  renderInvestimentos();
+});
+
 function renderInvestimentos() {
   const { investments, transactions } = Store.get();
   const total = investments.reduce((s, i) => s + (i.currentValue || 0), 0);
+  renderBenchmarkCard();
 
   const proceeds = transactions.filter(isProceeds);
   const proceeds12 = proceeds.filter((t) => lastNMonths(12, todayMonthKey()).includes(monthKey(t.date)));
@@ -222,9 +440,10 @@ function renderInvestimentos() {
     ? `<tr><td colspan="5" class="empty-row">Nenhuma posição cadastrada.</td></tr>`
     : investments.slice().sort((a, b) => (b.currentValue || 0) - (a.currentValue || 0)).map((inv) => {
         const pct = total > 0 ? ((inv.currentValue || 0) / total) * 100 : 0;
-        return `
-          <tr>
-            <td class="desc">${escapeHtml(inv.name)}</td>
+        const isOpen = expandedInvestments.has(inv.name);
+        const row = `
+          <tr class="inv-row" data-inv="${escapeHtml(inv.name)}">
+            <td class="desc">${isOpen ? "▾" : "▸"} ${escapeHtml(inv.name)}</td>
             <td>${escapeHtml(CLASS_LABELS[inv.class] || inv.class || "—")}</td>
             <td>${escapeHtml(liquidityLabel(inv.liquidity))}</td>
             <td class="right">${formatCurrency(inv.currentValue)}</td>
@@ -232,6 +451,15 @@ function renderInvestimentos() {
               <div class="pct-cell">
                 <div class="pct-track"><i style="width:${pct}%"></i></div>
                 <span class="pct-num">${formatPercent(pct)}</span>
+              </div>
+            </td>
+          </tr>`;
+        if (!isOpen) return row;
+        return row + `
+          <tr class="inv-detail-row">
+            <td colspan="5">
+              <div class="inv-detail">
+                ${renderInvestmentDetail(inv, { allInvestments: investments, totalPortfolio: total, benchmark })}
               </div>
             </td>
           </tr>`;
@@ -529,6 +757,14 @@ function renderAll() {
 applyTheme();
 renderAll();
 initFolder();
+
+// Selic/CDI só precisam ser buscados uma vez por abertura do app (rates.js já
+// cacheia por 1 dia); quando a resposta chega, só a aba de investimentos precisa
+// ser redesenhada para refletir o benchmark.
+fetchBenchmarkRates().then((result) => {
+  benchmark = result;
+  renderInvestimentos();
+}).catch(() => {});
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => {});

@@ -72,26 +72,6 @@ export function cashflowChart(canvasId, labels, incomeSeries, expenseSeries) {
   });
 }
 
-export function categoriesChart(canvasId, labels, values) {
-  const opts = baseOptions();
-  render(canvasId, {
-    type: "bar",
-    data: { labels, datasets: [{ data: values, backgroundColor: token("--accent"), borderRadius: 3, maxBarThickness: 18 }] },
-    options: {
-      ...opts,
-      indexAxis: "y",
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: (c) => brl(c.parsed.x) } },
-      },
-      scales: {
-        x: { ...opts.scales.y, beginAtZero: true, ticks: { ...opts.scales.y.ticks, callback: brlShort } },
-        y: { ...opts.scales.x, ticks: { ...opts.scales.x.ticks, font: { family: "Public Sans", size: 12 } } },
-      },
-    },
-  });
-}
-
 export function allocationChart(canvasId, labels, values) {
   const palette = [token("--accent"), token("--positive"), token("--negative"), token("--warning"), token("--ink-muted")];
   const opts = baseOptions();
@@ -126,11 +106,14 @@ export function allocationChart(canvasId, labels, values) {
   });
 }
 
-export function proceedsChart(canvasId, labels, values) {
+// Série única em barras — proventos de investimento (padrão) e gasto mensal do
+// cartão (`color: "--negative", label: "Gasto"`) reaproveitam a mesma função: a única
+// diferença entre os dois é a cor e o rótulo do tooltip/legenda.
+export function proceedsChart(canvasId, labels, values, { color = "--positive", label = "Proventos" } = {}) {
   const opts = baseOptions();
   render(canvasId, {
     type: "bar",
-    data: { labels, datasets: [{ label: "Proventos", data: values, backgroundColor: token("--positive"), borderRadius: 3, maxBarThickness: 22 }] },
+    data: { labels, datasets: [{ label, data: values, backgroundColor: token(color), borderRadius: 3, maxBarThickness: 22 }] },
     options: {
       ...opts,
       plugins: {
