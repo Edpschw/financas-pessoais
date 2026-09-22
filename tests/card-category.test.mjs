@@ -32,6 +32,18 @@ test("inferCategory: reconhece boleto de seguradora e transferência internacion
   assert.equal(inferCategory("IOF TRANSF CONTA GLOBAL"), "Transferência internacional");
 });
 
+test("inferCategory: juros de Tesouro Direto (corretora) vira Rendimentos, mas juros genérico não", () => {
+  assert.equal(inferCategory("COR JUROS TD."), "Rendimentos");
+  // "juros" sozinho (sem o prefixo "COR ") pode ser juros de mora/rotativo — despesa,
+  // não provento — por isso não deve casar.
+  assert.equal(inferCategory("JUROS ROTATIVO CARTAO"), "Outros");
+});
+
+test("inferCategory: devolução de compra e reembolso em lote viram Reembolso", () => {
+  assert.equal(inferCategory("DEV PIX MAGALUPAY"), "Reembolso");
+  assert.equal(inferCategory("SISPAG AMIL ASS MED INT"), "Reembolso");
+});
+
 test("inferCategory: comerciante sem palavra-chave reconhecida cai em Outros", () => {
   assert.equal(inferCategory("Bt Erico Verrisimo"), "Outros");
   assert.equal(inferCategory(undefined), "Outros");

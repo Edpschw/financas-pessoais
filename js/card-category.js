@@ -52,6 +52,21 @@ const CATEGORY_KEYWORDS = [
   ["Transferência internacional", [
     "conta global",
   ]],
+  // Juros do Tesouro Direto pago pela corretora — o mesmo tipo de provento que
+  // JSCP/dividendo/rendimento (esses já chegam categorizados "Rendimentos" no
+  // arquivo do banco; juros de TD, não). "cor juros", não "juros" sozinho: o prefixo
+  // "COR " já marca lançamento de corretora neste extrato (COR JSCP, COR DIVIDENDOS,
+  // COR TES DIRETO, ...) — "juros" sozinho pegaria juros de mora/rotativo, que é
+  // despesa, não receita.
+  ["Rendimentos", [
+    "cor juros",
+  ]],
+  // "DEV" é devolução (estorno de compra) e "SISPAG" é pagamento em lote usado por
+  // empresas/seguradoras pra reembolso — os dois são dinheiro que já era seu voltando,
+  // não renda nova.
+  ["Reembolso", [
+    "dev pix", "sispag",
+  ]],
 ];
 
 // Faixa Unicode das marcas de acento combinantes, construída por código de caractere
