@@ -1,8 +1,11 @@
-// Categoria aproximada de um item de fatura de cartão, inferida pelo nome do
-// comerciante — o arquivo de fatura não traz categoria por item, só o nome (ex:
-// "Zona Sul Fl 23", "Netflix.com"). É heurística por palavra-chave, no mesmo estilo
-// de isInvestmentMovement (js/investment-flow.js): não é perfeita, e o que não bate
-// com nada cai em "Outros" em vez de arriscar um chute errado.
+// Categoria aproximada de um lançamento sem categoria de verdade, inferida pelo nome
+// do comerciante/contraparte. Dois usos: todo item de fatura de cartão (o arquivo não
+// traz categoria por item, só o nome — ex: "Zona Sul Fl 23", "Netflix.com") e, no
+// extrato, qualquer lançamento que caiu em "Outros" (PIX/TED/boleto não vêm
+// categorizados do banco, só salário/freelance vêm prontos). É heurística por
+// palavra-chave, no mesmo estilo de isInvestmentMovement (js/investment-flow.js): não
+// é perfeita, e o que não bate com nada continua "Outros" em vez de arriscar um chute
+// errado.
 //
 // Palavras-chave escolhidas com cuidado pra não colidir entre si — ex: "supermercado"
 // por extenso em vez de "mercado" sozinho, que pegaria "Mercado*Mercadolivre" (uma
@@ -37,8 +40,17 @@ const CATEGORY_KEYWORDS = [
     "hotel", "booking", "airbnb", "latam", "gol linhas", "azul linhas aereas",
     "decolar", "cvc ",
   ]],
+  // Prefixo, não a palavra inteira: a exportação do Itaú trunca descrição longa (ex:
+  // "PAG BOLETO PLATACOR CORRETAGEM DE SEGUR" — corta bem no meio de "SEGURADORA").
+  // "segur" cobre seguro/seguros/segurado/seguradora e a forma truncada, sem colidir
+  // com nada comum em nome de comerciante.
   ["Seguros", [
-    "seguro", "seguradora",
+    "segur",
+  ]],
+  // "Conta Global" é o produto multi-moeda do Itaú; IOF sobre ela é o imposto
+  // específico de câmbio — as duas juntas só aparecem em movimentação internacional.
+  ["Transferência internacional", [
+    "conta global",
   ]],
 ];
 
@@ -50,7 +62,7 @@ function normalize(desc) {
   return (desc || "").toLowerCase().normalize("NFD").replace(DIACRITICS_RE, "");
 }
 
-export function inferCardCategory(description) {
+export function inferCategory(description) {
   const text = normalize(description);
   for (const [category, keywords] of CATEGORY_KEYWORDS) {
     if (keywords.some((kw) => text.includes(kw))) return category;

@@ -65,6 +65,20 @@ test("computeCashflowInsights: categoria Outros minoritária não gera aviso", (
   assert.ok(!insights.some((i) => /"Outros" concentra/.test(i.title)));
 });
 
+// O extrato não categoriza boleto/PIX (só salário/freelance vêm prontos do banco) —
+// a dominância de "Outros" usa a mesma inferência por palavra-chave do painel
+// "Despesas por tipo" (extratoTypeKey em app.js), senão o aviso contaria um "Outros"
+// maior do que o que a pessoa vê na tela logo abaixo.
+test("computeCashflowInsights: 'Outros' reconhecido por palavra-chave (ex: boleto de seguradora) não conta pra dominância", () => {
+  const months = ["2026-01"];
+  const transactions = [
+    tx({ date: "2026-01-05", category: "Outros", description: "PAG BOLETO SUHAI SEGURADORA SA", amount: 800 }),
+    tx({ date: "2026-01-06", category: "Alimentação", amount: 900 }),
+  ];
+  const insights = computeCashflowInsights(transactions, months);
+  assert.ok(!insights.some((i) => /"Outros" concentra/.test(i.title)));
+});
+
 test("computeCashflowInsights: tendência de poupança piorando entre as duas metades do período", () => {
   const months = ["2026-01", "2026-02", "2026-03", "2026-04"];
   const transactions = [
@@ -104,6 +118,46 @@ test("computeCashflowInsights: receita estável não gera aviso de irregularidad
   ];
   const insights = computeCashflowInsights(transactions, months);
   assert.ok(!insights.some((i) => /Receita irregular/.test(i.title)));
+});
+
+// Um PIX/TED de valor muito acima do lançamento típico sem categoria pode ser
+// transferência entre contas próprias — o app não sabe o nome do titular pra
+// confirmar, então avisa sem afirmar.
+test("computeCashflowInsights: receita 'Outros' muito maior que a típica gera aviso pra conferir", () => {
+  const months = ["2026-01"];
+  const transactions = [
+    tx({ date: "2026-01-02", type: "income", category: "Outros", description: "PIX TRANSF EDUARDO", amount: 16000 }),
+    tx({ date: "2026-01-05", type: "income", category: "Outros", description: "REND PAGO APLIC AUT MAIS", amount: 50 }),
+    tx({ date: "2026-01-06", type: "income", category: "Outros", description: "REND PAGO APLIC AUT MAIS", amount: 60 }),
+    tx({ date: "2026-01-07", type: "income", category: "Outros", description: "REND PAGO APLIC AUT MAIS", amount: 40 }),
+  ];
+  const insights = computeCashflowInsights(transactions, months);
+  const outlier = insights.find((i) => /sem origem identificada/.test(i.title));
+  assert.ok(outlier);
+  assert.match(outlier.desc, /EDUARDO/);
+});
+
+test("computeCashflowInsights: receitas 'Outros' de valor parecido não geram aviso de origem", () => {
+  const months = ["2026-01"];
+  const transactions = [
+    tx({ date: "2026-01-02", type: "income", category: "Outros", description: "PIX TRANSF A", amount: 500 }),
+    tx({ date: "2026-01-05", type: "income", category: "Outros", description: "PIX TRANSF B", amount: 450 }),
+    tx({ date: "2026-01-06", type: "income", category: "Outros", description: "PIX TRANSF C", amount: 600 }),
+  ];
+  const insights = computeCashflowInsights(transactions, months);
+  assert.ok(!insights.some((i) => /sem origem identificada/.test(i.title)));
+});
+
+test("computeCashflowInsights: receita 'Outros' grande mas reconhecida por palavra-chave não conta como não identificada", () => {
+  const months = ["2026-01"];
+  const transactions = [
+    tx({ date: "2026-01-02", type: "income", category: "Outros", description: "TRANSF CONTA GLOBAL", amount: 16000 }),
+    tx({ date: "2026-01-05", type: "income", category: "Outros", description: "REND PAGO APLIC AUT MAIS", amount: 50 }),
+    tx({ date: "2026-01-06", type: "income", category: "Outros", description: "REND PAGO APLIC AUT MAIS", amount: 60 }),
+    tx({ date: "2026-01-07", type: "income", category: "Outros", description: "REND PAGO APLIC AUT MAIS", amount: 40 }),
+  ];
+  const insights = computeCashflowInsights(transactions, months);
+  assert.ok(!insights.some((i) => /sem origem identificada/.test(i.title)));
 });
 
 // ---- cartão de crédito ----

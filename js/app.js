@@ -13,7 +13,7 @@ import * as AutoImport from "./auto-import.js";
 import { fetchBenchmarkRates } from "./rates.js";
 import { computeForecast, computeAttractiveness } from "./investment-insight.js";
 import { computeCashflowInsights, computeCardInsights } from "./cashflow-insight.js";
-import { inferCardCategory } from "./card-category.js";
+import { inferCategory } from "./card-category.js";
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -124,12 +124,12 @@ function renderFluxoExtrato() {
   cashflowChart("chart-fluxo", months.map(shortMonthLabel), income, expense);
 
   $("#fluxo-income-types-panel").hidden = false;
-  renderTypeBreakdown("#fluxo-income-types", inRange.filter((t) => t.type === "income"), (t) => t.category || "Outros", "da receita");
+  renderTypeBreakdown("#fluxo-income-types", inRange.filter((t) => t.type === "income"), extratoTypeKey, "da receita");
 
   $("#fluxo-expense-types-panel").hidden = false;
   $("#fluxo-expense-types-title").textContent = "Despesas por tipo";
   $("#fluxo-expense-types-subtitle").textContent = "Percentual da despesa do período.";
-  renderTypeBreakdown("#fluxo-expense-types", inRange.filter((t) => t.type === "expense"), (t) => t.category || "Outros", "da despesa");
+  renderTypeBreakdown("#fluxo-expense-types", inRange.filter((t) => t.type === "expense"), extratoTypeKey, "da despesa");
 
   renderTopExpenses(inRange);
 
@@ -191,7 +191,7 @@ function renderFluxoCartao() {
   $("#fluxo-expense-types-panel").hidden = false;
   $("#fluxo-expense-types-title").textContent = "Despesas do cartão por tipo";
   $("#fluxo-expense-types-subtitle").textContent = "Categoria aproximada pelo nome do comerciante — percentual do gasto do cartão no período.";
-  renderTypeBreakdown("#fluxo-expense-types", purchases, (t) => inferCardCategory(t.description), "do gasto do cartão");
+  renderTypeBreakdown("#fluxo-expense-types", purchases, (t) => inferCategory(t.description), "do gasto do cartão");
 
   renderTopExpenses(purchases);
 
@@ -251,6 +251,17 @@ function renderTopExpenses(transactions) {
           <div class="rank-bar"><i style="width:${max > 0 ? (g.total / max) * 100 : 0}%"></i></div>
         </div>
       `).join("");
+}
+
+// A categoria do extrato vem pronta do banco só pra salário/freelance/poucos rótulos
+// — todo PIX/TED/boleto cai em "Outros" sem distinção nenhuma, escondendo aí os
+// maiores gastos e receitas fora do padrão. Quando a categoria real é "Outros", tenta
+// a mesma inferência por palavra-chave do cartão (funciona igual: "PAG BOLETO ...
+// SEGURADORA" vira Seguros, "TRANSF CONTA GLOBAL" vira Transferência internacional);
+// categoria já reconhecida pelo banco nunca é sobrescrita.
+function extratoTypeKey(t) {
+  const category = t.category || "Outros";
+  return category === "Outros" ? inferCategory(t.description) : category;
 }
 
 // Agrupa por uma chave qualquer (categoria da receita/despesa no extrato, categoria

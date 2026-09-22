@@ -2,7 +2,8 @@
 // Puro (sem DOM) — recebe as transações já filtradas por isCashFlow e o range de
 // meses, devolve uma lista de cartões { level, title, desc }, mesmo formato usado
 // pela atratividade de investimento, para reaproveitar um único componente de render.
-import { monthKey, normalizeDescription } from "./utils.js";
+import { monthKey, normalizeDescription, formatCurrency } from "./utils.js";
+import { inferCategory } from "./card-category.js";
 
 function sumBy(list, pick) {
   return list.reduce((s, t) => s + (pick(t) ? t.amount : 0), 0);
@@ -60,14 +61,22 @@ function recurringConcentrationInsight(transactions, months) {
 }
 
 // "Outros" dominante: se a categorização não diz muito sobre o gasto, mais honesto
-// avisar isso do que fingir que a análise por categoria é conclusiva.
+// avisar isso do que fingir que a análise por categoria é conclusiva. Usa a mesma
+// inferência por palavra-chave do painel "Despesas por tipo" (extratoTypeKey em
+// app.js) — senão este aviso ficaria contando um "Outros" maior do que o que a
+// pessoa vê na tela logo abaixo.
 const OTHERS_DOMINANCE_THRESHOLD_PCT = 40;
+
+function effectiveCategory(t) {
+  const category = t.category || "Outros";
+  return category === "Outros" ? inferCategory(t.description) : category;
+}
 
 function othersDominanceInsight(transactions) {
   const expenses = transactions.filter((t) => t.type === "expense");
   const total = sumBy(expenses, () => true);
   if (total <= 0) return null;
-  const others = sumBy(expenses, (t) => (t.category || "Outros") === "Outros");
+  const others = sumBy(expenses, (t) => effectiveCategory(t) === "Outros");
   const sharePct = (others / total) * 100;
   if (sharePct <= OTHERS_DOMINANCE_THRESHOLD_PCT) return null;
   return {
@@ -121,12 +130,41 @@ function incomeVolatilityInsight(transactions, months) {
   };
 }
 
+// Receita grande sem origem identificada: um PIX/TED de valor bem acima do lançamento
+// típico de "Outros" pode ser transferência entre contas próprias (dinheiro que já era
+// seu, só mudou de lugar) em vez de renda nova — mas o app não tem como saber o nome
+// do titular pra confirmar, então avisa sem afirmar, pra pessoa conferir.
+const LARGE_UNIDENTIFIED_INCOME_MULTIPLE = 4;
+const LARGE_UNIDENTIFIED_INCOME_MIN = 2000;
+
+function largeUnidentifiedIncomeInsight(transactions) {
+  const unidentified = transactions.filter((t) => t.type === "income" && effectiveCategory(t) === "Outros");
+  if (unidentified.length < 3) return null;
+
+  const amounts = unidentified.map((t) => t.amount).sort((a, b) => a - b);
+  const median = amounts[Math.floor(amounts.length / 2)];
+  if (median <= 0) return null;
+
+  const flagged = unidentified
+    .filter((t) => t.amount > median * LARGE_UNIDENTIFIED_INCOME_MULTIPLE && t.amount > LARGE_UNIDENTIFIED_INCOME_MIN)
+    .sort((a, b) => b.amount - a.amount);
+  if (flagged.length === 0) return null;
+
+  const top = flagged[0];
+  return {
+    level: "warn",
+    title: "Receita grande sem origem identificada",
+    desc: `"${top.description}" somou ${formatCurrency(top.amount)}, bem acima do lançamento típico sem categoria (${formatCurrency(median)}). Pode ser transferência entre contas próprias, não renda nova — vale conferir antes de contar como receita.`,
+  };
+}
+
 // `transactions` já filtradas por isCashFlow; `months` é o range em análise (YYYY-MM).
 export function computeCashflowInsights(transactions, months) {
   return [
     redMonthsInsight(transactions, months),
     recurringConcentrationInsight(transactions, months),
     othersDominanceInsight(transactions),
+    largeUnidentifiedIncomeInsight(transactions),
     savingsTrendInsight(transactions, months),
     incomeVolatilityInsight(transactions, months),
   ].filter(Boolean);
